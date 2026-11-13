@@ -80,7 +80,7 @@ service cloud.firestore {
 
     function isValidQuestion(data) {
       return data.keys().hasAll(['courseId', 'question', 'answer', 'askedBy', 'createdAt']) &&
-        data.keys().hasOnly(['id', 'courseId', 'unitId', 'question', 'answer', 'marks', 'section', 'answerFormat', 'isCurated', 'thinkingUsed', 'groundedInSearch', 'modelUsed', 'sourceBooks', 'webSources', 'askedBy', 'askedByName', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'courseId', 'unitId', 'question', 'answer', 'marks', 'section', 'answerFormat', 'isCurated', 'thinkingUsed', 'groundedInSearch', 'modelUsed', 'sourceBooks', 'webSources', 'pdfDataUrl', 'pdfFileName', 'mimeType', 'askedBy', 'askedByName', 'createdAt', 'updatedAt']) &&
         data.courseId is string && data.courseId.size() <= 128 &&
         (!('unitId' in data) || (data.unitId is string && data.unitId.size() <= 128)) &&
         data.question is string && data.question.size() > 0 && data.question.size() <= 2000 &&
@@ -94,6 +94,9 @@ service cloud.firestore {
         (!('modelUsed' in data) || (data.modelUsed is string && data.modelUsed.size() <= 100)) &&
         (!('sourceBooks' in data) || (data.sourceBooks is string && data.sourceBooks.size() <= 1000)) &&
         (!('webSources' in data) || (data.webSources is list)) &&
+        (!('pdfDataUrl' in data) || (data.pdfDataUrl is string && data.pdfDataUrl.size() <= 800000)) &&
+        (!('pdfFileName' in data) || (data.pdfFileName is string && data.pdfFileName.size() <= 255)) &&
+        (!('mimeType' in data) || (data.mimeType is string && data.mimeType.size() <= 100)) &&
         data.askedBy is string && data.askedBy.size() <= 128 &&
         (!('askedByName' in data) || (data.askedByName is string && data.askedByName.size() <= 100));
     }
