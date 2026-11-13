@@ -482,38 +482,7 @@ export const CourseEditorModal: React.FC<CourseEditorModalProps> = ({
             />
           </div>
 
-          {/* Admin Decision on Answer Format */}
-          <div className="bg-stone-850 p-4 rounded-xl border border-stone-800">
-            <div className="flex items-center gap-2 mb-2">
-              <Sliders className="w-4 h-4 text-amber-400" />
-              <label className="text-xs font-mono text-stone-200 uppercase font-semibold">
-                Admin Default Answer Format Specification
-              </label>
-            </div>
-            <p className="text-[11px] text-stone-400 mb-3">
-              Admin decides how Gemini structures answers and synthesized notes for this course.
-            </p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-              {ANSWER_FORMATS.map((fmt) => (
-                <button
-                  type="button"
-                  key={fmt.id}
-                  onClick={() => setAnswerFormat(fmt.id)}
-                  className={`text-left p-3 rounded-lg border text-xs transition-all flex flex-col justify-between ${
-                    answerFormat === fmt.id
-                      ? 'border-amber-500 bg-amber-500/15 text-amber-200 shadow-sm'
-                      : 'border-stone-700 bg-stone-800/60 text-stone-300 hover:border-stone-600'
-                  }`}
-                >
-                  <div className="font-semibold text-stone-100 flex items-center justify-between">
-                    <span>{fmt.label}</span>
-                    {answerFormat === fmt.id && <CheckCircle2 className="w-3.5 h-3.5 text-amber-400" />}
-                  </div>
-                  <p className="text-[11px] text-stone-400 mt-1 line-clamp-2">{fmt.description}</p>
-                </button>
-              ))}
-            </div>
-          </div>
+
 
           {/* Upload Syllabus (PDF / Photo / Text) */}
           <div className="space-y-3 bg-stone-850 p-4 rounded-xl border border-stone-800">

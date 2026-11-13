@@ -61,6 +61,9 @@ export interface Question {
   modelUsed?: string;
   sourceBooks?: string;
   webSources?: WebGroundingSource[];
+  pdfDataUrl?: string;
+  pdfFileName?: string;
+  mimeType?: string;
   askedBy: string;
   askedByName?: string;
   createdAt: string;

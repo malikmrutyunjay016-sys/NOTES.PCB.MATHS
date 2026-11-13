@@ -14,6 +14,10 @@ import {
   FileText,
   AlertCircle,
   LogIn,
+  HelpCircle,
+  ChevronDown,
+  ChevronUp,
+  Trash2,
 } from 'lucide-react';
 import { auth, googleProvider } from './lib/firebase';
 import { signInWithPopup } from 'firebase/auth';
@@ -34,7 +38,7 @@ import {
   deleteWordNote,
   ADMIN_EMAIL,
 } from './lib/dataService';
-import { Course, Unit, Book, Question, WordNoteDocument } from './types';
+import { Course, Unit, Book, Question, WordNoteDocument, getSectionForMarks } from './types';
 import { Header } from './components/Header';
 import { UnitNotesView } from './components/UnitNotesView';
 import { ReferenceLibraryView } from './components/ReferenceLibraryView';
@@ -43,6 +47,7 @@ import { BookManagerModal } from './components/BookManagerModal';
 import { CourseEditorModal } from './components/CourseEditorModal';
 import { AddQuestionModal } from './components/AddQuestionModal';
 import { MobileFooterNav } from './components/MobileFooterNav';
+import { MarkdownView } from './components/MarkdownView';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -59,8 +64,8 @@ export default function App() {
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
   const [selectedUnit, setSelectedUnit] = useState<Unit | null>(null);
 
-  // Active View Tab: 'units' | 'library' | 'notes' | 'course_settings'
-  const [activeTab, setActiveTab] = useState<'units' | 'library' | 'notes' | 'course_settings'>('units');
+  // Active View Tab: 'units' | 'library' | 'notes' | 'course_settings' | '1M' | '2M' | '5M' | '8M'
+  const [activeTab, setActiveTab] = useState<'units' | 'library' | 'notes' | 'course_settings' | '1M' | '2M' | '5M' | '8M'>('units');
 
   // Modals
   const [isBookManagerOpen, setIsBookManagerOpen] = useState(false);
@@ -68,6 +73,8 @@ export default function App() {
   const [courseToEdit, setCourseToEdit] = useState<Course | null>(null);
   const [isAddQuestionOpen, setIsAddQuestionOpen] = useState(false);
   const [addQuestionDefaultUnitId, setAddQuestionDefaultUnitId] = useState<string | undefined>(undefined);
+  const [addQuestionDefaultMarks, setAddQuestionDefaultMarks] = useState<number | undefined>(undefined);
+  const [expandedMarksQuestions, setExpandedMarksQuestions] = useState<Record<string, boolean>>({});
 
   // Notification for guest mode
   const [showGuestBanner, setShowGuestBanner] = useState<boolean>(true);
@@ -168,6 +175,25 @@ export default function App() {
   const currentWordNotes = selectedCourse
     ? wordNotes.filter((n) => n.courseId === selectedCourse.id || n.courseId === 'general')
     : wordNotes;
+
+  const getQuestionsByMarkTab = (tab: '1M' | '2M' | '5M' | '8M') => {
+    const targetSectionMap: Record<'1M' | '2M' | '5M' | '8M', string> = {
+      '1M': 'Group A',
+      '2M': 'Group B',
+      '5M': 'Group C',
+      '8M': 'Group D',
+    };
+    const targetSection = targetSectionMap[tab];
+    return currentQuestions.filter((q) => {
+      const sec = getSectionForMarks(q.marks);
+      return sec === targetSection || q.section === targetSection;
+    });
+  };
+
+  const questions1M = getQuestionsByMarkTab('1M');
+  const questions2M = getQuestionsByMarkTab('2M');
+  const questions5M = getQuestionsByMarkTab('5M');
+  const questions8M = getQuestionsByMarkTab('8M');
 
   // Handlers for Course Management
   const handleSaveCourse = async (
@@ -479,6 +505,62 @@ export default function App() {
                 </button>
 
                 <button
+                  onClick={() => setActiveTab('1M')}
+                  className={`flex items-center gap-1.5 py-3 px-3.5 text-xs font-semibold border-b-2 transition-all whitespace-nowrap ${
+                    activeTab === '1M'
+                      ? 'border-amber-600 text-amber-900 font-bold'
+                      : 'border-transparent text-stone-600 hover:text-stone-900'
+                  }`}
+                >
+                  <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 font-mono text-[10px] font-bold">
+                    1M
+                  </span>
+                  <span>1M ({questions1M.length})</span>
+                </button>
+
+                <button
+                  onClick={() => setActiveTab('2M')}
+                  className={`flex items-center gap-1.5 py-3 px-3.5 text-xs font-semibold border-b-2 transition-all whitespace-nowrap ${
+                    activeTab === '2M'
+                      ? 'border-amber-600 text-amber-900 font-bold'
+                      : 'border-transparent text-stone-600 hover:text-stone-900'
+                  }`}
+                >
+                  <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 font-mono text-[10px] font-bold">
+                    2M
+                  </span>
+                  <span>2M ({questions2M.length})</span>
+                </button>
+
+                <button
+                  onClick={() => setActiveTab('5M')}
+                  className={`flex items-center gap-1.5 py-3 px-3.5 text-xs font-semibold border-b-2 transition-all whitespace-nowrap ${
+                    activeTab === '5M'
+                      ? 'border-amber-600 text-amber-900 font-bold'
+                      : 'border-transparent text-stone-600 hover:text-stone-900'
+                  }`}
+                >
+                  <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 font-mono text-[10px] font-bold">
+                    5M
+                  </span>
+                  <span>5M ({questions5M.length})</span>
+                </button>
+
+                <button
+                  onClick={() => setActiveTab('8M')}
+                  className={`flex items-center gap-1.5 py-3 px-3.5 text-xs font-semibold border-b-2 transition-all whitespace-nowrap ${
+                    activeTab === '8M'
+                      ? 'border-amber-600 text-amber-900 font-bold'
+                      : 'border-transparent text-stone-600 hover:text-stone-900'
+                  }`}
+                >
+                  <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 font-mono text-[10px] font-bold">
+                    8M
+                  </span>
+                  <span>8M ({questions8M.length})</span>
+                </button>
+
+                <button
                   onClick={() => setActiveTab('library')}
                   className={`flex items-center gap-2 py-3 px-4 text-xs font-semibold border-b-2 transition-all whitespace-nowrap ${
                     activeTab === 'library'
@@ -512,12 +594,14 @@ export default function App() {
                 isAdmin={isAdmin}
                 onOpenAddQuestion={(unitId) => {
                   setAddQuestionDefaultUnitId(unitId);
+                  setAddQuestionDefaultMarks(undefined);
                   setIsAddQuestionOpen(true);
                 }}
                 onUpdateUnitNotes={handleUpdateUnitNotes}
                 onAskQuestionAboutUnit={(unit) => {
                   setSelectedUnit(unit);
                   setAddQuestionDefaultUnitId(unit.id);
+                  setAddQuestionDefaultMarks(undefined);
                   setIsAddQuestionOpen(true);
                 }}
                 onOpenEditCourse={() => {
@@ -530,6 +614,178 @@ export default function App() {
                 userName={currentUser?.displayName || (currentUser?.email ? currentUser.email.split('@')[0] : 'Course Admin')}
               />
             )}
+
+            {(activeTab === '1M' || activeTab === '2M' || activeTab === '5M' || activeTab === '8M') && (() => {
+              const markNumberMap: Record<'1M' | '2M' | '5M' | '8M', number> = {
+                '1M': 1,
+                '2M': 2,
+                '5M': 5,
+                '8M': 8,
+              };
+              const markLabelMap: Record<'1M' | '2M' | '5M' | '8M', string> = {
+                '1M': '1 Mark Questions (Group A • Objective & Very Short Answer)',
+                '2M': '2 Marks Questions (Group B • Short Answer)',
+                '5M': '5 Marks Questions (Group C • Medium Descriptive)',
+                '8M': '8 Marks Questions (Group D • Long Answer / Essay)',
+              };
+              const activeMarkValue = markNumberMap[activeTab];
+              const tabQuestions = getQuestionsByMarkTab(activeTab);
+
+              return (
+                <div className="bg-white rounded-2xl border border-stone-200/90 p-6 md:p-8 shadow-sm space-y-6">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-stone-200 pb-4">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="px-2.5 py-0.5 rounded bg-amber-500 text-stone-950 font-mono text-xs font-bold">
+                          {activeTab}
+                        </span>
+                        <h2 className="text-xl font-serif font-bold text-stone-900">
+                          {markLabelMap[activeTab]}
+                        </h2>
+                      </div>
+                      <p className="text-xs text-stone-500 mt-1">
+                        Showing {tabQuestions.length} curated {activeMarkValue}-mark {tabQuestions.length === 1 ? 'question' : 'questions'} for {selectedCourse.code}: {selectedCourse.title}
+                      </p>
+                    </div>
+
+                    {isAdmin && (
+                      <button
+                        onClick={() => {
+                          setAddQuestionDefaultUnitId(selectedUnit?.id || currentUnits[0]?.id);
+                          setAddQuestionDefaultMarks(activeMarkValue);
+                          setIsAddQuestionOpen(true);
+                        }}
+                        className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold shadow transition-all shrink-0"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Add {activeTab} Question</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {tabQuestions.length === 0 ? (
+                    <div className="p-10 text-center rounded-xl bg-stone-50 border border-stone-200/80">
+                      <HelpCircle className="w-10 h-10 text-amber-500/60 mx-auto mb-2.5" />
+                      <h3 className="font-serif font-bold text-base text-stone-800">
+                        No {activeTab} Questions Added Yet
+                      </h3>
+                      <p className="text-xs text-stone-500 max-w-md mx-auto mt-1">
+                        {isAdmin
+                          ? `Click "Add ${activeTab} Question" to create or bulk-paste ${activeMarkValue}-mark exam questions and model answers.`
+                          : `No ${activeMarkValue}-mark questions have been published for this course yet.`}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {tabQuestions.map((q, idx) => {
+                        const isExpanded = Boolean(expandedMarksQuestions[q.id]);
+                        const linkedUnit = currentUnits.find((u) => u.id === q.unitId);
+                        return (
+                          <div
+                            key={q.id}
+                            className="rounded-xl border border-stone-200 bg-stone-50 hover:border-amber-300 transition-all overflow-hidden shadow-xs"
+                          >
+                            <button
+                              onClick={() =>
+                                setExpandedMarksQuestions((prev) => ({
+                                  ...prev,
+                                  [q.id]: !prev[q.id],
+                                }))
+                              }
+                              className="w-full text-left p-4 flex items-start justify-between gap-3"
+                            >
+                              <div className="flex items-start gap-3">
+                                <span className="w-8 h-8 rounded-lg bg-amber-100 text-amber-900 text-xs font-mono font-bold flex items-center justify-center shrink-0 mt-0.5 shadow-xs">
+                                  Q{idx + 1}
+                                </span>
+                                <div>
+                                  <div className="font-semibold text-stone-900 text-sm leading-snug">
+                                    {q.question}
+                                  </div>
+                                  <div className="flex flex-wrap items-center gap-2 mt-1.5 text-[11px] text-stone-500 font-mono">
+                                    <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 font-semibold">
+                                      {getSectionForMarks(q.marks)} • {q.marks || activeMarkValue} {Number(q.marks || activeMarkValue) === 1 ? 'Mark' : 'Marks'}
+                                    </span>
+                                    {linkedUnit && (
+                                      <>
+                                        <span>•</span>
+                                        <span className="text-stone-700 font-medium">
+                                          {linkedUnit.title}
+                                        </span>
+                                      </>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                {isAdmin && (
+                                  <span
+                                    role="button"
+                                    tabIndex={0}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDeleteQuestion(q.id);
+                                    }}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter' || e.key === ' ') {
+                                        e.stopPropagation();
+                                        handleDeleteQuestion(q.id);
+                                      }
+                                    }}
+                                    className="p-1.5 rounded-lg text-stone-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                                    title="Delete Question"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </span>
+                                )}
+                                <div className="p-1 text-stone-400">
+                                  {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                                </div>
+                              </div>
+                            </button>
+
+                            {isExpanded && (
+                              <div className="p-5 pt-0 border-t border-stone-200/80 bg-white space-y-4">
+                                {q.pdfDataUrl ? (
+                                  <div className="space-y-3 pt-3">
+                                    <div className="flex items-center justify-between bg-stone-900 text-stone-100 p-3 rounded-xl">
+                                      <div className="flex items-center gap-2 text-xs font-mono">
+                                        <FileText className="w-4 h-4 text-amber-400" />
+                                        <span>{q.pdfFileName || 'Question_Paper.pdf'}</span>
+                                      </div>
+                                      <a
+                                        href={q.pdfDataUrl}
+                                        download={q.pdfFileName || 'Question_Paper.pdf'}
+                                        className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold flex items-center gap-1.5 shadow"
+                                      >
+                                        <Download className="w-3.5 h-3.5" />
+                                        <span>Download PDF</span>
+                                      </a>
+                                    </div>
+                                    <div className="w-full h-[550px] bg-stone-950 rounded-xl border border-stone-800 overflow-hidden shadow-inner">
+                                      <iframe
+                                        src={q.pdfDataUrl}
+                                        title={q.pdfFileName || 'PDF Viewer'}
+                                        className="w-full h-full border-0"
+                                      />
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <>
+                                    <div className="text-xs text-stone-500 font-mono uppercase mb-2 mt-3">Model Answer:</div>
+                                    <MarkdownView content={q.answer} />
+                                  </>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             {activeTab === 'notes' && (
               <WordNotesTabView
@@ -687,6 +943,7 @@ export default function App() {
           units={currentUnits}
           books={currentBooks}
           defaultUnitId={addQuestionDefaultUnitId}
+          defaultMarks={addQuestionDefaultMarks}
           onSaveQuestion={handleSaveQuestion}
           userId={currentUser?.uid || 'guest-admin'}
           userName={currentUser?.displayName || (currentUser?.email ? currentUser.email.split('@')[0] : 'Course Admin')}

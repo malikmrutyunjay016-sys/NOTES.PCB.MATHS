@@ -246,6 +246,15 @@ export async function createQuestion(q: Question): Promise<void> {
     if (Array.isArray(q.webSources) && q.webSources.length > 0) {
       payload.webSources = q.webSources.slice(0, 8);
     }
+    if (q.pdfDataUrl) {
+      payload.pdfDataUrl = q.pdfDataUrl.slice(0, 750000);
+    }
+    if (q.pdfFileName) {
+      payload.pdfFileName = q.pdfFileName.slice(0, 255);
+    }
+    if (q.mimeType) {
+      payload.mimeType = q.mimeType.slice(0, 100);
+    }
     await setDoc(doc(db, 'questions', q.id), payload);
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);

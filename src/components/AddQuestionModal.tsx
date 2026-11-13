@@ -10,6 +10,7 @@ import {
   Globe,
   FileText,
   Layers,
+  Upload,
 } from 'lucide-react';
 import { Course, Unit, Book, Question, ANSWER_FORMATS, getSectionForMarks } from '../types';
 
@@ -20,6 +21,7 @@ interface AddQuestionModalProps {
   units: Unit[];
   books: Book[];
   defaultUnitId?: string;
+  defaultMarks?: number;
   onSaveQuestion: (q: Omit<Question, 'id' | 'createdAt'>) => Promise<void>;
   userId: string;
   userName: string;
@@ -39,6 +41,7 @@ export const AddQuestionModal: React.FC<AddQuestionModalProps> = ({
   units,
   books,
   defaultUnitId,
+  defaultMarks,
   onSaveQuestion,
   userId,
   userName,
@@ -47,17 +50,22 @@ export const AddQuestionModal: React.FC<AddQuestionModalProps> = ({
   const [selectedUnitId, setSelectedUnitId] = useState<string>(defaultUnitId || units[0]?.id || '');
   
   // Single question state
-  const [question, setQuestion] = useState('');
-  const [answer, setAnswer] = useState('');
-  const [marks, setMarks] = useState<number>(5);
+  const [question, setQuestion] = useState(defaultMarks ? `${defaultMarks}M Exam Paper / Question Set` : '');
+  const [answer, setAnswer] = useState('Official PDF uploaded for this mark tier.');
+  const [marks, setMarks] = useState<number>(defaultMarks || 5);
   const [answerFormat, setAnswerFormat] = useState(course.answerFormat || 'detailed');
   const [useThinking, setUseThinking] = useState(false);
   const [useSearch, setUseSearch] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [modelUsed, setModelUsed] = useState('Manual Entry');
+  const [modelUsed, setModelUsed] = useState('PDF Document Upload');
   const [sourcesList, setSourcesList] = useState<string[]>([]);
   const [webSourcesList, setWebSourcesList] = useState<Array<{ title: string; uri: string }>>([]);
+
+  // PDF upload state
+  const [pdfFileName, setPdfFileName] = useState('');
+  const [pdfFileData, setPdfFileData] = useState('');
+  const [pdfMimeType, setPdfMimeType] = useState('application/pdf');
 
   // Bulk paste state
   const [bulkText, setBulkText] = useState('');
@@ -70,61 +78,26 @@ export const AddQuestionModal: React.FC<AddQuestionModalProps> = ({
 
   const currentUnit = units.find((u) => u.id === selectedUnitId);
 
-  const handleGenerateAnswer = async () => {
-    if (!question.trim()) {
-      setErrorMessage('Please enter a question to generate an answer.');
-      return;
+  const handlePdfUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setPdfFileName(file.name);
+    setPdfMimeType(file.type || 'application/pdf');
+    if (!question || question.includes('Exam Paper')) {
+      const cleanName = file.name.replace(/\.[^/.]+$/, '').replace(/[_|-]/g, ' ');
+      setQuestion(cleanName);
     }
 
-    try {
-      setIsGenerating(true);
-      setErrorMessage(null);
-      const res = await fetch('/api/gemini/answer', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          question,
-          courseTitle: course.title,
-          courseCode: course.code,
-          syllabusContext: course.syllabusText,
-          unitTitle: currentUnit?.title || '',
-          referenceBooks: books.map((b) => ({
-            title: b.title,
-            author: b.author,
-            edition: b.edition,
-            fileName: b.fileName,
-            excerpt: b.excerpt,
-            content: b.content,
-          })),
-          answerFormat,
-          useThinking,
-          useSearch: true,
-        }),
-      });
-
-      const contentType = res.headers.get('content-type') || '';
-      let data: any = {};
-      if (contentType.includes('application/json')) {
-        data = await res.json();
-      } else {
-        const rawText = await res.text();
-        throw new Error(`Server returned error (${res.status}): ${rawText.slice(0, 80)}`);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const dataUrl = ev.target?.result as string;
+      if (dataUrl) {
+        setPdfFileData(dataUrl);
+        setAnswer(`Uploaded official PDF question paper/notes: ${file.name} (${Math.round(file.size / 1024)} KB)`);
       }
-
-      if (data.answer) {
-        setAnswer(data.answer);
-        setModelUsed(data.modelUsed || 'gemini-3.8-flash');
-        if (data.sources) setSourcesList(data.sources);
-        if (data.webSources) setWebSourcesList(data.webSources);
-      } else if (data.error) {
-        setErrorMessage(data.error);
-      }
-    } catch (err: any) {
-      console.error('Error generating question answer:', err);
-      setErrorMessage(err.message || 'Error generating answer');
-    } finally {
-      setIsGenerating(false);
-    }
+    };
+    reader.readAsDataURL(file);
   };
 
   const handleParseBulkText = async () => {
@@ -171,8 +144,8 @@ export const AddQuestionModal: React.FC<AddQuestionModalProps> = ({
 
   const handleSubmitSingle = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!question.trim() || !answer.trim()) {
-      setErrorMessage('Both question and answer are required.');
+    if (!question.trim()) {
+      setErrorMessage('Question title or description is required.');
       return;
     }
 
@@ -185,8 +158,8 @@ export const AddQuestionModal: React.FC<AddQuestionModalProps> = ({
         courseId: course.id,
         unitId: selectedUnitId,
         question: question.trim(),
-        answer: answer.trim(),
-        marks: Number(marks) || 5,
+        answer: answer.trim() || `PDF document: ${pdfFileName || 'Question Paper'}`,
+        marks: Number(marks) || defaultMarks || 5,
         section: calculatedSection,
         answerFormat,
         isCurated: true,
@@ -195,13 +168,16 @@ export const AddQuestionModal: React.FC<AddQuestionModalProps> = ({
         modelUsed,
         sourceBooks: sourcesList.join(', ') || books.map((b) => b.title).join(', '),
         webSources: webSourcesList,
+        pdfDataUrl: pdfFileData || undefined,
+        pdfFileName: pdfFileName || undefined,
+        mimeType: pdfMimeType,
         askedBy: userId,
-        askedByName: `${userName} (Admin Curated)`,
+        askedByName: `${userName} (Admin PDF Curated)`,
       });
       onClose();
     } catch (err: any) {
-      console.error('Error saving question:', err);
-      setErrorMessage('Failed to save question to notes: ' + err.message);
+      console.error('Error saving question PDF:', err);
+      setErrorMessage('Failed to save PDF to notes: ' + err.message);
     } finally {
       setIsSaving(false);
     }
@@ -400,63 +376,41 @@ export const AddQuestionModal: React.FC<AddQuestionModalProps> = ({
                 </div>
               </div>
 
-              {/* AI Generation settings */}
-              <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-stone-800/60 rounded-xl border border-stone-700">
-                <div className="flex items-center gap-4 text-xs">
-                  <label className="flex items-center gap-1.5 cursor-pointer text-stone-200">
-                    <input
-                      type="checkbox"
-                      checked={useThinking}
-                      onChange={(e) => setUseThinking(e.target.checked)}
-                      className="rounded border-stone-600 text-amber-600 focus:ring-amber-500 bg-stone-700"
-                    />
-                    <Brain className="w-3.5 h-3.5 text-purple-400" />
-                    <span>Deep Thinking Mode</span>
-                  </label>
-
-                  <label className="flex items-center gap-1.5 cursor-pointer text-stone-200">
-                    <input
-                      type="checkbox"
-                      checked={useSearch}
-                      onChange={(e) => setUseSearch(e.target.checked)}
-                      className="rounded border-stone-600 text-amber-600 focus:ring-amber-500 bg-stone-700"
-                    />
-                    <Globe className="w-3.5 h-3.5 text-sky-400" />
-                    <span>Search Grounding</span>
-                  </label>
+              {/* Admin PDF Upload for this Mark Tier */}
+              <div className="bg-stone-850 p-4 rounded-xl border border-stone-800 space-y-3">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 rounded-lg bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                    <FileText className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-mono uppercase text-stone-200 font-semibold">
+                      Upload PDF Question Paper / Solution Document
+                    </h4>
+                    <p className="text-[11px] text-stone-400">
+                      Upload the official PDF for this {marks}M tier. Users will be able to view and download it directly.
+                    </p>
+                  </div>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={handleGenerateAnswer}
-                  disabled={isGenerating || !question.trim()}
-                  className="px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-white text-xs font-semibold shadow transition-all disabled:opacity-40 flex items-center gap-1.5"
-                >
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>{isGenerating ? 'Synthesizing...' : 'Generate Answer with AI'}</span>
-                </button>
-              </div>
-
-              {/* Model Answer Area */}
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-xs font-mono text-stone-300 uppercase">
-                    Model Answer Content (Markdown) *
-                  </label>
-                  {modelUsed && (
-                    <span className="text-[10px] font-mono text-amber-400 px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/20">
-                      {modelUsed}
+                <div className="border-2 border-dashed border-stone-700 hover:border-amber-500/60 rounded-xl p-4 text-center bg-stone-900/50 transition-colors">
+                  <input
+                    type="file"
+                    id="mark-tier-pdf-upload"
+                    accept="application/pdf"
+                    onChange={handlePdfUpload}
+                    className="hidden"
+                  />
+                  <label
+                    htmlFor="mark-tier-pdf-upload"
+                    className="cursor-pointer flex flex-col items-center justify-center gap-1.5"
+                  >
+                    <Upload className="w-5 h-5 text-amber-400" />
+                    <span className="text-xs font-semibold text-stone-200">
+                      {pdfFileName ? `Selected PDF: ${pdfFileName}` : 'Click to select PDF file for this mark tier'}
                     </span>
-                  )}
+                    <span className="text-[10px] font-mono text-stone-400">PDF documents only</span>
+                  </label>
                 </div>
-                <textarea
-                  required
-                  rows={8}
-                  placeholder="Model answer grounded in reference books..."
-                  value={answer}
-                  onChange={(e) => setAnswer(e.target.value)}
-                  className="w-full bg-stone-800 border border-stone-700 rounded-lg p-3 text-xs font-mono text-stone-100 focus:outline-none focus:border-amber-500 leading-relaxed"
-                />
               </div>
 
               {/* Submit Single */}

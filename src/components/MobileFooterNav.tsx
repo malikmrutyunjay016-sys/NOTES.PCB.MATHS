@@ -7,7 +7,7 @@ import {
 import { usePWAInstall } from '../lib/usePWAInstall';
 
 interface MobileFooterNavProps {
-  activeTab: 'notes' | 'units' | 'library' | 'course_settings';
+  activeTab: 'notes' | 'units' | 'library' | 'course_settings' | '1M' | '2M' | '5M' | '8M';
   onSelectTab: (tab: 'units' | 'library') => void;
   unitsCount: number;
   booksCount: number;
