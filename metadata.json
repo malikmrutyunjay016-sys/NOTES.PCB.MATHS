@@ -1,0 +1,6 @@
+{
+  "name": "Notes - Reference Book & Syllabus Study Platform",
+  "description": "Upload reference books and syllabus, organize unit-wise notes, ask deep questions with Gemini thinking and search grounding, and download study packs for offline learning.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

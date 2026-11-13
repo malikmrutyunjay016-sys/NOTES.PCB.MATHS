@@ -1,0 +1,115 @@
+{
+  "entities": {
+    "Course": {
+      "title": "Course",
+      "description": "Academic course or paper section containing syllabus, units, and books",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "code": { "type": "string", "maxLength": 50 },
+        "title": { "type": "string", "maxLength": 200 },
+        "description": { "type": "string", "maxLength": 2000 },
+        "department": { "type": "string", "maxLength": 100 },
+        "semester": { "type": "string", "maxLength": 50 },
+        "syllabusText": { "type": "string", "maxLength": 50000 },
+        "answerFormat": { "type": "string", "maxLength": 100 },
+        "createdBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["code", "title", "createdBy", "createdAt"]
+    },
+    "Unit": {
+      "title": "Unit",
+      "description": "Syllabus unit with notes generated from reference books",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "courseId": { "type": "string", "maxLength": 128 },
+        "unitNumber": { "type": "integer" },
+        "title": { "type": "string", "maxLength": 200 },
+        "topics": { "type": "string", "maxLength": 5000 },
+        "notes": { "type": "string", "maxLength": 100000 },
+        "summary": { "type": "string", "maxLength": 5000 },
+        "createdBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["courseId", "unitNumber", "title", "createdBy", "createdAt"]
+    },
+    "Book": {
+      "title": "Book",
+      "description": "Reference book uploaded to library for a course or general reference",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "courseId": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "maxLength": 200 },
+        "author": { "type": "string", "maxLength": 200 },
+        "edition": { "type": "string", "maxLength": 100 },
+        "fileName": { "type": "string", "maxLength": 255 },
+        "fileSize": { "type": "integer" },
+        "content": { "type": "string", "maxLength": 200000 },
+        "excerpt": { "type": "string", "maxLength": 5000 },
+        "createdBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["courseId", "title", "content", "createdBy", "createdAt"]
+    },
+    "Question": {
+      "title": "Question",
+      "description": "Curated or user asked question with summarized reference book answer",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "courseId": { "type": "string", "maxLength": 128 },
+        "unitId": { "type": "string", "maxLength": 128 },
+        "question": { "type": "string", "maxLength": 2000 },
+        "answer": { "type": "string", "maxLength": 50000 },
+        "answerFormat": { "type": "string", "maxLength": 100 },
+        "isCurated": { "type": "boolean" },
+        "thinkingUsed": { "type": "boolean" },
+        "groundedInSearch": { "type": "boolean" },
+        "modelUsed": { "type": "string", "maxLength": 50 },
+        "sourceBooks": { "type": "string", "maxLength": 1000 },
+        "askedBy": { "type": "string", "maxLength": 128 },
+        "askedByName": { "type": "string", "maxLength": 100 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["courseId", "question", "answer", "askedBy", "createdAt"]
+    },
+    "Admin": {
+      "title": "Admin",
+      "description": "Authorized administrator document",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "maxLength": 150 },
+        "role": { "type": "string", "maxLength": 50 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["email", "role"]
+    }
+  },
+  "firestore": {
+    "/courses/{courseId}": {
+      "schema": { "$ref": "Course" },
+      "description": "Academic courses and paper sections"
+    },
+    "/units/{unitId}": {
+      "schema": { "$ref": "Unit" },
+      "description": "Syllabus unit breakdown with notes"
+    },
+    "/books/{bookId}": {
+      "schema": { "$ref": "Book" },
+      "description": "Reference books uploaded to the system"
+    },
+    "/questions/{questionId}": {
+      "schema": { "$ref": "Question" },
+      "description": "Questions and reference-based answers"
+    },
+    "/admins/{adminId}": {
+      "schema": { "$ref": "Admin" },
+      "description": "Verified admin users"
+    }
+  }
+}
