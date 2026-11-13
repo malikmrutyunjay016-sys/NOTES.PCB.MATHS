@@ -463,7 +463,7 @@ export default function App() {
                   }`}
                 >
                   <Layers className="w-4 h-4 text-amber-600" />
-                  <span>Syllabus & Unit Notes ({currentUnits.length})</span>
+                  <span>Syllabus ({currentUnits.length})</span>
                 </button>
 
                 <button

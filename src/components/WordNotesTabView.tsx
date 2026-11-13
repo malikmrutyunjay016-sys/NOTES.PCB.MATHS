@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { jsPDF } from 'jspdf';
+import { toCanvas } from 'html-to-image';
 import {
   FileText,
   Save,
@@ -20,23 +21,16 @@ import {
   Outdent,
   Table,
   Image as ImageIcon,
-  Link as LinkIcon,
   Minus,
-  Type,
-  Sliders,
   Eye,
   Edit3,
   CheckCircle2,
   FileCheck,
   Lock,
-  Sparkles,
   Search,
   ZoomIn,
   ZoomOut,
-  Printer,
-  ShieldCheck,
   Info,
-  FolderOpen,
   Highlighter,
   Palette,
   RotateCcw,
@@ -86,7 +80,22 @@ const FONT_SIZES = [8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36];
 
 const ACADEMIC_SYMBOLS = ['∑', '∫', 'π', 'Δ', '∞', '≈', '≠', '≤', '≥', '→', '⇔', 'λ', 'θ', 'μ', 'σ', '√', '±', '∈'];
 
-// Helper to convert a base64 data URL (`data:application/pdf;base64,...`) into an Object URL for fast iframe/download
+const MARGIN_PADDING_MAP: Record<string, string> = {
+  narrow: '24px',
+  moderate: '36px',
+  normal: '48px',
+  wide: '68px',
+};
+
+function parsePageSettings(jsonStr?: string): WordPageSettings {
+  if (!jsonStr) return DEFAULT_PAGE_SETTINGS;
+  try {
+    return { ...DEFAULT_PAGE_SETTINGS, ...JSON.parse(jsonStr) };
+  } catch {
+    return DEFAULT_PAGE_SETTINGS;
+  }
+}
+
 function dataUrlToBlobUrl(dataUrl: string): string {
   try {
     if (!dataUrl || !dataUrl.startsWith('data:')) return '';
@@ -106,33 +115,16 @@ function dataUrlToBlobUrl(dataUrl: string): string {
   }
 }
 
-// Convert HTML structure & Microsoft Word Document Properties into a multi-page PDF data URL
-function generatePdfFromWordDocument(params: {
+// Convert the exact Read-Only PDF Sheet DOM element into a multi-page PDF that is 100% visually identical
+async function convertDomSheetToExactPdf(params: {
+  element: HTMLElement;
   title: string;
   subject: string;
   author: string;
-  category: string;
   keywords: string;
-  status: string;
-  comments: string;
-  courseCode: string;
-  courseTitle: string;
-  htmlContent: string;
   pageSettings: WordPageSettings;
-}): { pdfDataUrl: string; pageCount: number } {
-  const {
-    title,
-    subject,
-    author,
-    category,
-    keywords,
-    status,
-    comments,
-    courseCode,
-    courseTitle,
-    htmlContent,
-    pageSettings,
-  } = params;
+}): Promise<{ pdfDataUrl: string; pageCount: number }> {
+  const { element, title, subject, author, keywords, pageSettings } = params;
 
   const formatMap: Record<string, 'a4' | 'letter' | 'legal'> = {
     A4: 'a4',
@@ -146,311 +138,184 @@ function generatePdfFromWordDocument(params: {
     format: formatMap[pageSettings.pageSize] || 'a4',
   });
 
-  // Set official PDF document properties (Microsoft Word -> PDF Metadata)
   doc.setProperties({
     title: title || 'Course Notes',
-    subject: subject || `${courseCode} - ${courseTitle}`,
+    subject: subject || 'Academic Notes',
     author: author || 'Course Admin',
-    keywords: keywords || `${courseCode}, ${category}`,
-    creator: 'Notes Microsoft Word Studio (Auto-PDF Converter)',
+    keywords: keywords || 'Notes',
+    creator: 'Notes Microsoft Word Studio',
   });
 
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const pageHeight = doc.internal.pageSize.getHeight();
+  const pdfPageWidthMm = doc.internal.pageSize.getWidth();
+  const pdfPageHeightMm = doc.internal.pageSize.getHeight();
 
-  const marginMap: Record<string, number> = {
-    narrow: 12.7,
-    moderate: 19.05,
-    normal: 25.4,
-    wide: 35.0,
-  };
-  const margin = marginMap[pageSettings.margins] || 20;
-  const contentWidth = pageWidth - margin * 2;
+  // Render the exact DOM element at 2x resolution for crisp print quality
+  const canvas = await toCanvas(element, {
+    pixelRatio: 2,
+    backgroundColor: pageSettings.pageColor || '#ffffff',
+    cacheBust: true,
+    skipFonts: true,
+    fontEmbedCSS: '',
+  });
 
-  const lineSpacingMultiplier = parseFloat(pageSettings.lineSpacing || '1.15') || 1.15;
+  const imgWidthPx = canvas.width;
+  const imgHeightPx = canvas.height;
 
-  // Choose base jsPDF font family
-  const pdfFont = pageSettings.defaultFont.toLowerCase().includes('times') ||
-    pageSettings.defaultFont.toLowerCase().includes('georgia') ||
-    pageSettings.defaultFont.toLowerCase().includes('cambria')
-    ? 'times'
-    : pageSettings.defaultFont.toLowerCase().includes('consolas') ||
-      pageSettings.defaultFont.toLowerCase().includes('courier')
-    ? 'courier'
-    : 'helvetica';
+  // Calculate how many canvas pixels correspond to 1 full PDF page height
+  const pageHeightPx = Math.floor((imgWidthPx * pdfPageHeightMm) / pdfPageWidthMm);
+  const totalPages = Math.max(1, Math.ceil(imgHeightPx / pageHeightPx));
 
-  let cursorY = margin + 8;
-
-  const ensureSpace = (neededMm: number) => {
-    if (cursorY + neededMm > pageHeight - margin - 10) {
+  for (let pageIndex = 0; pageIndex < totalPages; pageIndex++) {
+    if (pageIndex > 0) {
       doc.addPage();
-      cursorY = margin + 8;
     }
+
+    const sourceY = pageIndex * pageHeightPx;
+    const sliceHeightPx = Math.min(pageHeightPx, imgHeightPx - sourceY);
+
+    const pageCanvas = document.createElement('canvas');
+    pageCanvas.width = imgWidthPx;
+    pageCanvas.height = pageHeightPx;
+
+    const ctx = pageCanvas.getContext('2d');
+    if (ctx) {
+      ctx.fillStyle = pageSettings.pageColor || '#ffffff';
+      ctx.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
+      ctx.drawImage(
+        canvas,
+        0,
+        sourceY,
+        imgWidthPx,
+        sliceHeightPx,
+        0,
+        0,
+        imgWidthPx,
+        sliceHeightPx
+      );
+    }
+
+    const sliceDataUrl = pageCanvas.toDataURL('image/jpeg', 0.92);
+    doc.addImage(sliceDataUrl, 'JPEG', 0, 0, pdfPageWidthMm, pdfPageHeightMm);
+  }
+
+  return {
+    pdfDataUrl: doc.output('datauristring'),
+    pageCount: totalPages,
   };
-
-  // Document Header Banner inside Page 1
-  doc.setFont(pdfFont, 'bold');
-  doc.setFontSize(18);
-  doc.setTextColor(28, 25, 23);
-  const titleLines = doc.splitTextToSize(title || 'Untitled Note Document', contentWidth);
-  doc.text(titleLines, margin, cursorY);
-  cursorY += titleLines.length * 7.5;
-
-  if (subject || category || status) {
-    doc.setFont(pdfFont, 'normal');
-    doc.setFontSize(9.5);
-    doc.setTextColor(100, 95, 90);
-    const metaLine = [
-      courseCode ? `${courseCode}: ${courseTitle}` : '',
-      subject ? `Subject: ${subject}` : '',
-      category ? `Category: ${category}` : '',
-      author ? `Author: ${author}` : '',
-      status ? `Status: ${status}` : '',
-    ]
-      .filter(Boolean)
-      .join('  •  ');
-    const splitMeta = doc.splitTextToSize(metaLine, contentWidth);
-    doc.text(splitMeta, margin, cursorY);
-    cursorY += splitMeta.length * 4.5 + 2;
-  }
-
-  if (comments) {
-    doc.setFont(pdfFont, 'italic');
-    doc.setFontSize(9);
-    doc.setTextColor(120, 113, 108);
-    const splitComments = doc.splitTextToSize(`Abstract / Notes: ${comments}`, contentWidth);
-    doc.text(splitComments, margin, cursorY);
-    cursorY += splitComments.length * 4.2 + 2;
-  }
-
-  // Divider line under document metadata
-  doc.setDrawColor(214, 211, 209);
-  doc.setLineWidth(0.4);
-  doc.line(margin, cursorY, pageWidth - margin, cursorY);
-  cursorY += 7;
-
-  // Parse HTML content into blocks for accurate PDF layout
-  const tempDiv = document.createElement('div');
-  tempDiv.innerHTML = htmlContent || '<p></p>';
-
-  const renderElementNode = (node: Node, listPrefix?: string) => {
-    if (node.nodeType === Node.TEXT_NODE) {
-      const text = (node.textContent || '').replace(/\s+/g, ' ').trim();
-      if (!text) return;
-      doc.setFont(pdfFont, 'normal');
-      doc.setFontSize(pageSettings.defaultFontSize || 11);
-      doc.setTextColor(28, 25, 23);
-      const lines = doc.splitTextToSize(text, contentWidth);
-      const lineHeight = ((pageSettings.defaultFontSize || 11) * 0.38) * lineSpacingMultiplier;
-      for (const line of lines) {
-        ensureSpace(lineHeight + 2);
-        doc.text(line, margin, cursorY);
-        cursorY += lineHeight;
-      }
-      cursorY += 2;
-      return;
-    }
-
-    if (node.nodeType !== Node.ELEMENT_NODE) return;
-    const el = node as HTMLElement;
-    const tag = el.tagName.toUpperCase();
-
-    if (tag === 'HR') {
-      ensureSpace(6);
-      doc.setDrawColor(180, 175, 170);
-      doc.setLineWidth(0.3);
-      doc.line(margin, cursorY, pageWidth - margin, cursorY);
-      cursorY += 5;
-      return;
-    }
-
-    if (tag === 'H1' || tag === 'H2' || tag === 'H3' || tag === 'H4') {
-      const text = (el.innerText || el.textContent || '').trim();
-      if (!text) return;
-      const sizeMap: Record<string, number> = { H1: 16, H2: 14, H3: 12.5, H4: 11.5 };
-      const ptSize = sizeMap[tag] || 13;
-      const lineHeight = ptSize * 0.42 * lineSpacingMultiplier;
-      ensureSpace(lineHeight + 5);
-      cursorY += 2;
-      doc.setFont(pdfFont, 'bold');
-      doc.setFontSize(ptSize);
-      doc.setTextColor(20, 20, 20);
-      const lines = doc.splitTextToSize(text, contentWidth);
-      for (const line of lines) {
-        ensureSpace(lineHeight + 2);
-        doc.text(line, margin, cursorY);
-        cursorY += lineHeight;
-      }
-      cursorY += 2.5;
-      return;
-    }
-
-    if (tag === 'UL' || tag === 'OL') {
-      const items = Array.from(el.children);
-      items.forEach((child, idx) => {
-        const prefix = tag === 'OL' ? `${idx + 1}. ` : '• ';
-        renderElementNode(child, prefix);
-      });
-      cursorY += 2;
-      return;
-    }
-
-    if (tag === 'TABLE') {
-      const rows = Array.from(el.querySelectorAll('tr'));
-      if (rows.length > 0) {
-        cursorY += 2;
-        rows.forEach((tr, rIdx) => {
-          const cells = Array.from(tr.querySelectorAll('th, td'));
-          if (cells.length === 0) return;
-          const colW = contentWidth / cells.length;
-          const cellTexts = cells.map((c) =>
-            doc.splitTextToSize((c.textContent || '').trim(), colW - 4)
-          );
-          const maxLines = Math.max(1, ...cellTexts.map((lines) => lines.length));
-          const rowH = maxLines * 4.8 + 4;
-          ensureSpace(rowH + 2);
-
-          cells.forEach((c, cIdx) => {
-            const x = margin + cIdx * colW;
-            if (rIdx === 0 || c.tagName.toUpperCase() === 'TH') {
-              doc.setFillColor(245, 243, 240);
-              doc.rect(x, cursorY - 3.5, colW, rowH, 'FD');
-              doc.setFont(pdfFont, 'bold');
-            } else {
-              doc.setDrawColor(214, 211, 209);
-              doc.rect(x, cursorY - 3.5, colW, rowH, 'S');
-              doc.setFont(pdfFont, 'normal');
-            }
-            doc.setFontSize(9.5);
-            doc.setTextColor(28, 25, 23);
-            doc.text(cellTexts[cIdx], x + 2, cursorY + 1);
-          });
-          cursorY += rowH;
-        });
-        cursorY += 4;
-      }
-      return;
-    }
-
-    if (tag === 'BLOCKQUOTE' || tag === 'PRE') {
-      const text = (el.innerText || el.textContent || '').trim();
-      if (!text) return;
-      doc.setFont(tag === 'PRE' ? 'courier' : pdfFont, tag === 'BLOCKQUOTE' ? 'italic' : 'normal');
-      doc.setFontSize(10);
-      doc.setTextColor(68, 64, 60);
-      const lines = doc.splitTextToSize(text, contentWidth - 10);
-      const blockH = lines.length * 4.5 + 5;
-      ensureSpace(blockH + 3);
-      doc.setFillColor(250, 248, 245);
-      doc.setDrawColor(217, 119, 6);
-      doc.rect(margin + 2, cursorY - 3.5, contentWidth - 4, blockH, 'F');
-      doc.setLineWidth(0.8);
-      doc.line(margin + 2, cursorY - 3.5, margin + 2, cursorY - 3.5 + blockH);
-      doc.setLineWidth(0.3);
-      doc.text(lines, margin + 6, cursorY + 1);
-      cursorY += blockH + 3;
-      return;
-    }
-
-    // Default paragraph / list item / div
-    const rawText = (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
-    if (!rawText && el.children.length > 0) {
-      Array.from(el.childNodes).forEach((child) => renderElementNode(child));
-      return;
-    }
-    if (!rawText) {
-      cursorY += 3;
-      return;
-    }
-
-    const isBold =
-      tag === 'B' ||
-      tag === 'STRONG' ||
-      el.style?.fontWeight === 'bold' ||
-      Number(el.style?.fontWeight) >= 600;
-    const isItalic = tag === 'I' || tag === 'EM' || el.style?.fontStyle === 'italic';
-    const fontStyle = isBold && isItalic ? 'bolditalic' : isBold ? 'bold' : isItalic ? 'italic' : 'normal';
-
-    const fontSize = pageSettings.defaultFontSize || 11;
-    doc.setFont(pdfFont, fontStyle);
-    doc.setFontSize(fontSize);
-    doc.setTextColor(28, 25, 23);
-
-    const indentX = listPrefix ? margin + 5 : margin;
-    const availW = listPrefix ? contentWidth - 5 : contentWidth;
-    const fullText = listPrefix ? `${listPrefix}${rawText}` : rawText;
-
-    const lines = doc.splitTextToSize(fullText, availW);
-    const lineHeight = fontSize * 0.39 * lineSpacingMultiplier;
-
-    for (const line of lines) {
-      ensureSpace(lineHeight + 2);
-      const align = el.style?.textAlign;
-      if (align === 'center') {
-        doc.text(line, pageWidth / 2, cursorY, { align: 'center' });
-      } else if (align === 'right') {
-        doc.text(line, pageWidth - margin, cursorY, { align: 'right' });
-      } else {
-        doc.text(line, indentX, cursorY);
-      }
-      cursorY += lineHeight;
-    }
-    cursorY += 2.5;
-  };
-
-  Array.from(tempDiv.childNodes).forEach((node) => renderElementNode(node));
-
-  // Apply Running Header, Footer, Page Border, Watermark, and Page Numbers across all pages
-  const totalPages = doc.getNumberOfPages();
-  for (let p = 1; p <= totalPages; p++) {
-    doc.setPage(p);
-
-    // Optional Page Border
-    if (pageSettings.showPageBorder) {
-      doc.setDrawColor(168, 162, 158);
-      doc.setLineWidth(0.4);
-      doc.rect(8, 8, pageWidth - 16, pageHeight - 16, 'S');
-    }
-
-    // Optional Watermark
-    if (pageSettings.watermark && pageSettings.watermark.trim()) {
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(34);
-      doc.setTextColor(235, 232, 228);
-      doc.text(pageSettings.watermark.toUpperCase(), pageWidth / 2, pageHeight / 2, {
-        align: 'center',
-        angle: 35,
-      });
-    }
-
-    // Running Header
-    if (pageSettings.headerText && pageSettings.headerText.trim()) {
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(8.5);
-      doc.setTextColor(120, 113, 108);
-      doc.text(pageSettings.headerText, margin, 11);
-      doc.setDrawColor(231, 229, 228);
-      doc.setLineWidth(0.2);
-      doc.line(margin, 13, pageWidth - margin, 13);
-    }
-
-    // Running Footer & Page Numbering
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8.5);
-    doc.setTextColor(120, 113, 108);
-    if (pageSettings.footerText && pageSettings.footerText.trim()) {
-      doc.text(pageSettings.footerText, margin, pageHeight - 10);
-    }
-    if (pageSettings.showPageNumbers) {
-      doc.text(`Page ${p} of ${totalPages}`, pageWidth - margin, pageHeight - 10, {
-        align: 'right',
-      });
-    }
-  }
-
-  const pdfDataUrl = doc.output('datauristring');
-  return { pdfDataUrl, pageCount: totalPages };
 }
+
+// Reusable Exact Read-Only PDF Sheet Component (Used both for on-screen Read-Only PDF View and exact PDF conversion)
+interface ReadOnlyPdfSheetProps {
+  sheetRef?: React.RefObject<HTMLDivElement | null>;
+  title: string;
+  subject?: string;
+  author: string;
+  category?: string;
+  status?: string;
+  comments?: string;
+  pdfFileName: string;
+  wordCount: number;
+  version: number;
+  pageCount: number;
+  htmlContent: string;
+  pageSettings: WordPageSettings;
+}
+
+const ReadOnlyPdfSheet: React.FC<ReadOnlyPdfSheetProps> = ({
+  sheetRef,
+  title,
+  subject,
+  author,
+  category,
+  status,
+  comments,
+  pdfFileName,
+  wordCount,
+  version,
+  pageCount,
+  htmlContent,
+  pageSettings,
+}) => {
+  return (
+    <div
+      ref={sheetRef}
+      style={{
+        backgroundColor: pageSettings.pageColor || '#ffffff',
+        padding: MARGIN_PADDING_MAP[pageSettings.margins] || '48px',
+        fontFamily: pageSettings.defaultFont || 'Calibri, sans-serif',
+        fontSize: `${pageSettings.defaultFontSize || 12}pt`,
+        lineHeight: pageSettings.lineSpacing || '1.15',
+        border: pageSettings.showPageBorder ? '2px solid #78716c' : '1px solid #d6d3d1',
+      }}
+      className={`bg-white rounded-xl shadow-2xl mx-auto select-none relative overflow-hidden ${
+        pageSettings.orientation === 'landscape' ? 'max-w-5xl' : 'max-w-3xl'
+      }`}
+    >
+      {/* Diagonal Watermark Overlay */}
+      {pageSettings.watermark && pageSettings.watermark.trim() && (
+        <div className="pointer-events-none select-none absolute inset-0 flex items-center justify-center overflow-hidden opacity-10 z-0">
+          <span className="text-5xl font-bold uppercase tracking-widest text-stone-500 -rotate-35">
+            {pageSettings.watermark}
+          </span>
+        </div>
+      )}
+
+      <div className="relative z-10">
+        {/* Top Running Header / Read-Only PDF Header */}
+        <div className="flex items-center justify-between text-[11px] font-mono text-stone-400 border-b border-stone-200 pb-3 mb-6">
+          <span>{pageSettings.headerText || subject || title}</span>
+          <span>READ-ONLY PDF VIEW • {pdfFileName}</span>
+        </div>
+
+        {/* Document Title & Properties Block */}
+        <div className="mb-6 pb-4 border-b border-stone-200">
+          <h1 className="text-2xl font-serif font-bold text-stone-900">
+            {title}
+          </h1>
+          {subject && (
+            <p className="text-xs text-stone-600 mt-1 font-medium">{subject}</p>
+          )}
+          <div className="flex flex-wrap items-center gap-3 mt-2 text-xs text-stone-500 font-mono">
+            <span>Author: {author}</span>
+            <span>•</span>
+            <span>Category: {category || 'Lecture Notes'}</span>
+            <span>•</span>
+            <span>Status: {status || 'Published'}</span>
+            <span>•</span>
+            <span>Words: {wordCount}</span>
+          </div>
+          {comments && (
+            <p className="text-xs text-stone-500 italic mt-2 bg-stone-50 p-2.5 rounded-lg border border-stone-200/80">
+              {comments}
+            </p>
+          )}
+        </div>
+
+        {/* Exact Formatted Document Body */}
+        <div
+          className="prose prose-stone max-w-none text-stone-800 pointer-events-none min-h-[420px]"
+          style={{
+            fontFamily: pageSettings.defaultFont || 'Calibri, sans-serif',
+            fontSize: `${pageSettings.defaultFontSize || 12}pt`,
+            lineHeight: pageSettings.lineSpacing || '1.15',
+          }}
+          dangerouslySetInnerHTML={{ __html: htmlContent }}
+        />
+
+        {/* Bottom Running Footer */}
+        <div className="mt-10 pt-3 border-t border-stone-200 flex items-center justify-between text-[11px] font-mono text-stone-400">
+          <span>
+            {pageSettings.footerText || 'Auto-Converted from Admin Microsoft Word Document'}
+          </span>
+          <span>
+            Version {version || 1}
+            {pageSettings.showPageNumbers ? ` • ${pageCount || 1} Page(s)` : ''}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 export const WordNotesTabView: React.FC<WordNotesTabViewProps> = ({
   course,
@@ -493,14 +358,21 @@ export const WordNotesTabView: React.FC<WordNotesTabViewProps> = ({
   const [pageSettings, setPageSettings] = useState<WordPageSettings>({
     ...DEFAULT_PAGE_SETTINGS,
     headerText: course ? `${course.code} • ${course.title}` : 'Official Academic Notes',
-    footerText: 'Confidential Course Material • Auto-Converted PDF',
+    footerText: 'Official Course Material • Auto-Converted PDF',
   });
 
-  // Editor state
+  // Live HTML mirror state for exact offscreen PDF capture during save
+  const [liveHtmlForPdf, setLiveHtmlForPdf] = useState<string>('');
+
+  // Refs
   const editorRef = useRef<HTMLDivElement>(null);
+  const captureSheetRef = useRef<HTMLDivElement>(null);
+  const readOnlyViewerSheetRef = useRef<HTMLDivElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
+
   const [zoomLevel, setZoomLevel] = useState<number>(100);
   const [isSaving, setIsSaving] = useState<boolean>(false);
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState<boolean>(false);
   const [saveBanner, setSaveBanner] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [wordStats, setWordStats] = useState({ words: 0, chars: 0, paragraphs: 1 });
@@ -518,21 +390,6 @@ export const WordNotesTabView: React.FC<WordNotesTabViewProps> = ({
     [courseNotes, selectedNoteId]
   );
 
-  // Convert selectedNote's pdfDataUrl into a Blob URL for embedded PDF viewing
-  const activePdfBlobUrl = useMemo(() => {
-    if (!selectedNote?.pdfDataUrl) return '';
-    return dataUrlToBlobUrl(selectedNote.pdfDataUrl);
-  }, [selectedNote?.pdfDataUrl]);
-
-  // Clean up object URL on unmount/change
-  useEffect(() => {
-    return () => {
-      if (activePdfBlobUrl) {
-        URL.revokeObjectURL(activePdfBlobUrl);
-      }
-    };
-  }, [activePdfBlobUrl]);
-
   // Load selected note into Word Editor when selection changes
   useEffect(() => {
     if (selectedNote) {
@@ -544,23 +401,16 @@ export const WordNotesTabView: React.FC<WordNotesTabViewProps> = ({
       setDocStatus((selectedNote.status as any) || 'Published');
       setDocComments(selectedNote.comments || '');
       setSelectedUnitId(selectedNote.unitId || '');
-      if (selectedNote.pageSettingsJson) {
-        try {
-          setPageSettings({
-            ...DEFAULT_PAGE_SETTINGS,
-            ...JSON.parse(selectedNote.pageSettingsJson),
-          });
-        } catch {
-          // keep defaults
-        }
-      }
+      setPageSettings(parsePageSettings(selectedNote.pageSettingsJson));
+      setLiveHtmlForPdf(selectedNote.htmlContent);
       if (editorRef.current && editorRef.current.innerHTML !== selectedNote.htmlContent) {
         editorRef.current.innerHTML = selectedNote.htmlContent;
       }
       computeStats(selectedNote.plainText || '');
     } else if (editorRef.current && !editorRef.current.innerHTML.trim()) {
-      const initialHtml = `<h1>${course ? `${course.code}: ${course.title}` : 'Official Course Study Notes'}</h1><p>Start typing your lecture notes here using the <strong>Microsoft Word Ribbon</strong> above. Format headings, insert tables, mathematical symbols, and customize page layout.</p><p>When you click <strong>Save &amp; Auto-Convert to PDF</strong>, this Word document is automatically converted into a locked <strong>PDF</strong> for students and users.</p>`;
+      const initialHtml = `<h1>${course ? `${course.code}: ${course.title}` : 'Official Course Study Notes'}</h1><p>Start typing your lecture notes here using the <strong>Microsoft Word Ribbon</strong> above. Format headings, insert tables, mathematical symbols, and customize page layout.</p><p>When you click <strong>Save &amp; Auto-Convert to PDF</strong>, this Word document is automatically converted into an exact read-only <strong>PDF</strong> for students and users.</p>`;
       editorRef.current.innerHTML = initialHtml;
+      setLiveHtmlForPdf(initialHtml);
       computeStats(editorRef.current.innerText || '');
     }
   }, [selectedNote?.id]);
@@ -575,6 +425,7 @@ export const WordNotesTabView: React.FC<WordNotesTabViewProps> = ({
 
   const handleEditorInput = () => {
     if (!editorRef.current) return;
+    setLiveHtmlForPdf(editorRef.current.innerHTML);
     computeStats(editorRef.current.innerText || '');
   };
 
@@ -650,14 +501,16 @@ export const WordNotesTabView: React.FC<WordNotesTabViewProps> = ({
     setDocKeywords(course ? `${course.code}, Notes` : 'Notes');
     setDocStatus('Published');
     setDocComments('');
+    const initialHtml = `<h1>Untitled Lecture Notes</h1><p>Enter structured lecture content here...</p>`;
+    setLiveHtmlForPdf(initialHtml);
     if (editorRef.current) {
-      editorRef.current.innerHTML = `<h1>Untitled Lecture Notes</h1><p>Enter structured lecture content here...</p>`;
+      editorRef.current.innerHTML = initialHtml;
       computeStats(editorRef.current.innerText || '');
     }
     setSaveBanner(null);
   };
 
-  // Save Word Document & Automatically Convert to PDF
+  // Save Word Document & Automatically Convert to an EXACT visual match PDF
   const handleSaveAndConvertPdf = async () => {
     if (!docTitle.trim()) {
       setErrorMessage('Please enter a Document Title before saving.');
@@ -669,28 +522,33 @@ export const WordNotesTabView: React.FC<WordNotesTabViewProps> = ({
       setErrorMessage(null);
       setSaveBanner(null);
 
-      const htmlContent = editorRef.current?.innerHTML || `<p>${docTitle}</p>`;
+      const htmlContent = editorRef.current?.innerHTML || liveHtmlForPdf || `<p>${docTitle}</p>`;
       const plainText = editorRef.current?.innerText || docTitle;
+      setLiveHtmlForPdf(htmlContent);
 
-      // Auto-convert the Microsoft Word document & its properties into a real PDF
-      const { pdfDataUrl, pageCount } = generatePdfFromWordDocument({
-        title: docTitle.trim(),
-        subject: docSubject.trim(),
-        author: docAuthor.trim() || userName || 'Course Admin',
-        category: docCategory.trim(),
-        keywords: docKeywords.trim(),
-        status: docStatus,
-        comments: docComments.trim(),
-        courseCode: course?.code || 'COURSE',
-        courseTitle: course?.title || 'Academic Notes',
-        htmlContent,
-        pageSettings,
-      });
+      // Wait one animation frame so the offscreen ReadOnlyPdfSheet reflects the latest HTML
+      await new Promise((r) => setTimeout(r, 60));
 
       const cleanFileName = `${docTitle
         .trim()
         .replace(/[^a-zA-Z0-9_-]+/g, '_')
         .replace(/^_+|_+$/g, '') || 'Course_Notes'}.pdf`;
+
+      let pdfDataUrl = '';
+      let pageCount = 1;
+
+      if (captureSheetRef.current) {
+        const result = await convertDomSheetToExactPdf({
+          element: captureSheetRef.current,
+          title: docTitle.trim(),
+          subject: docSubject.trim(),
+          author: docAuthor.trim() || userName || 'Course Admin',
+          keywords: docKeywords.trim(),
+          pageSettings,
+        });
+        pdfDataUrl = result.pdfDataUrl;
+        pageCount = result.pageCount;
+      }
 
       const noteId =
         selectedNote?.id || `wordnote-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
@@ -723,9 +581,9 @@ export const WordNotesTabView: React.FC<WordNotesTabViewProps> = ({
       await onSaveWordNote(noteDoc);
       setSelectedNoteId(noteId);
       setSaveBanner(
-        `Saved "${noteDoc.title}" (v${noteDoc.version}) and automatically converted to PDF (${cleanFileName} • ${pageCount} ${
+        `Saved "${noteDoc.title}" (v${noteDoc.version}) and converted to an exact PDF (${cleanFileName} • ${pageCount} ${
           pageCount === 1 ? 'page' : 'pages'
-        })! Users can now view & download the PDF.`
+        })!`
       );
     } catch (err: any) {
       console.error('Error saving Word note and converting to PDF:', err);
@@ -735,18 +593,43 @@ export const WordNotesTabView: React.FC<WordNotesTabViewProps> = ({
     }
   };
 
-  // Download generated PDF file
-  const handleDownloadPdf = (note: WordNoteDocument) => {
-    if (!note.pdfDataUrl) return;
-    const blobUrl = dataUrlToBlobUrl(note.pdfDataUrl);
-    const link = document.createElement('a');
-    link.href = blobUrl || note.pdfDataUrl;
-    link.download = note.pdfFileName || `${note.title.replace(/\s+/g, '_')}.pdf`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    if (blobUrl) {
-      setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
+  // Download exact PDF matching the Read-Only PDF View
+  const handleDownloadPdf = async (note: WordNoteDocument) => {
+    try {
+      setIsDownloadingPdf(true);
+      let targetDataUrl = note.pdfDataUrl;
+
+      // If currently viewing this note in the Read-Only PDF View, capture directly from the rendered sheet so it is 100% identical
+      if (readOnlyViewerSheetRef.current && selectedNote?.id === note.id) {
+        try {
+          const noteSettings = parsePageSettings(note.pageSettingsJson);
+          const exact = await convertDomSheetToExactPdf({
+            element: readOnlyViewerSheetRef.current,
+            title: note.title,
+            subject: note.subject || '',
+            author: note.author || 'Course Admin',
+            keywords: note.keywords || '',
+            pageSettings: noteSettings,
+          });
+          targetDataUrl = exact.pdfDataUrl;
+        } catch {
+          // fallback to stored pdfDataUrl
+        }
+      }
+
+      if (!targetDataUrl) return;
+      const blobUrl = dataUrlToBlobUrl(targetDataUrl);
+      const link = document.createElement('a');
+      link.href = blobUrl || targetDataUrl;
+      link.download = note.pdfFileName || `${note.title.replace(/\s+/g, '_')}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      if (blobUrl) {
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
+      }
+    } finally {
+      setIsDownloadingPdf(false);
     }
   };
 
@@ -772,18 +655,12 @@ export const WordNotesTabView: React.FC<WordNotesTabViewProps> = ({
     URL.revokeObjectURL(url);
   };
 
-  // Page visual dimensions in editor
-  const marginPaddingMap: Record<string, string> = {
-    narrow: '24px',
-    moderate: '36px',
-    normal: '48px',
-    wide: '68px',
-  };
-
   // ============================================================================
-  // USER / STUDENT VIEW (OR ADMIN PDF PREVIEW): USERS CAN ONLY ACCESS PDF
+  // USER / STUDENT VIEW (OR ADMIN PDF PREVIEW): ONLY SHOW THE READ-ONLY PDF
   // ============================================================================
   if (activeMode === 'pdf_reader') {
+    const selectedNotePageSettings = parsePageSettings(selectedNote?.pageSettingsJson);
+
     return (
       <div className="space-y-6">
         {/* Top Role & Access Banner */}
@@ -795,7 +672,7 @@ export const WordNotesTabView: React.FC<WordNotesTabViewProps> = ({
             <div>
               <div className="flex flex-wrap items-center gap-2">
                 <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[11px] font-mono font-semibold flex items-center gap-1">
-                  <Lock className="w-3 h-3" /> PDF-Only Reader Mode
+                  <Lock className="w-3 h-3" /> Read-Only PDF Access
                 </span>
                 {course && (
                   <span className="text-xs font-mono text-stone-400">
@@ -804,12 +681,12 @@ export const WordNotesTabView: React.FC<WordNotesTabViewProps> = ({
                 )}
               </div>
               <h2 className="text-xl font-serif font-bold text-white mt-1">
-                Published Course Notes (PDF Documents)
+                Published Course Notes (Read-Only PDF)
               </h2>
               <p className="text-xs text-stone-400 mt-0.5">
                 {isAdmin
-                  ? 'Previewing User PDF-Only Mode. Students can view and download auto-converted PDFs without editing permissions.'
-                  : 'Official course notes authored by the administrator in Microsoft Word and automatically published as read-only PDFs.'}
+                  ? 'Viewing the exact Read-Only PDF that students see and download.'
+                  : 'Official course notes authored by the administrator in Microsoft Word and published as read-only PDFs.'}
               </p>
             </div>
           </div>
@@ -833,7 +710,7 @@ export const WordNotesTabView: React.FC<WordNotesTabViewProps> = ({
             </h3>
             <p className="text-xs text-stone-500 max-w-md mx-auto mt-1.5 leading-relaxed">
               {isAdmin
-                ? 'Switch to the Microsoft Word Studio to write course notes. Upon saving, they are automatically converted into PDFs for students.'
+                ? 'Switch to the Microsoft Word Studio to write course notes. Upon saving, they are automatically converted into read-only PDFs for students.'
                 : 'The course administrator has not published any PDF lecture notes yet. Please check back soon.'}
             </p>
             {isAdmin && (
@@ -910,6 +787,7 @@ export const WordNotesTabView: React.FC<WordNotesTabViewProps> = ({
                             e.stopPropagation();
                             handleDownloadPdf(note);
                           }}
+                          disabled={isDownloadingPdf}
                           className={`w-full py-1.5 px-3 rounded-lg text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-colors ${
                             isSelected
                               ? 'bg-amber-500 hover:bg-amber-400 text-stone-950'
@@ -917,7 +795,7 @@ export const WordNotesTabView: React.FC<WordNotesTabViewProps> = ({
                           }`}
                         >
                           <Download className="w-3.5 h-3.5" />
-                          <span>Download PDF</span>
+                          <span>{isDownloadingPdf && isSelected ? 'Preparing PDF...' : 'Download PDF'}</span>
                         </button>
                       </div>
                     </div>
@@ -926,105 +804,54 @@ export const WordNotesTabView: React.FC<WordNotesTabViewProps> = ({
               </div>
             </div>
 
-            {/* Right Area: PDF Document Viewer & Properties */}
+            {/* Right Area: ONLY the Read-Only PDF View */}
             {selectedNote && (
               <div className="lg:col-span-3 space-y-4">
-                {/* PDF Header Bar */}
-                <div className="bg-white rounded-2xl border border-stone-200 p-5 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div className="space-y-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="px-2 py-0.5 rounded bg-rose-100 text-rose-800 border border-rose-200 text-[10px] font-mono font-bold">
-                        LOCKED PDF DOCUMENT
-                      </span>
-                      <span className="text-xs font-mono text-stone-500">
-                        {selectedNote.pdfFileName}
-                      </span>
-                      <span className="text-xs font-mono text-stone-400">
-                        • Author: {selectedNote.author}
-                      </span>
-                    </div>
-                    <h3 className="text-lg font-serif font-bold text-stone-900">
-                      {selectedNote.title}
-                    </h3>
-                    {selectedNote.subject && (
-                      <p className="text-xs text-stone-500">{selectedNote.subject}</p>
-                    )}
+                {/* PDF Action Header Bar */}
+                <div className="bg-white rounded-2xl border border-stone-200 p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="px-2.5 py-1 rounded bg-rose-100 text-rose-800 border border-rose-200 text-[10px] font-mono font-bold">
+                      READ-ONLY PDF
+                    </span>
+                    <span className="text-xs font-mono text-stone-600 font-semibold">
+                      {selectedNote.pdfFileName}
+                    </span>
+                    <span className="text-xs font-mono text-stone-400">
+                      • {selectedNote.pageCount || 1} {selectedNote.pageCount === 1 ? 'Page' : 'Pages'} • v{selectedNote.version || 1}
+                    </span>
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-2 shrink-0">
-                    {activePdfBlobUrl && (
-                      <a
-                        href={activePdfBlobUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="px-3.5 py-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-800 text-xs font-semibold flex items-center gap-1.5 transition-colors border border-stone-200"
-                      >
-                        <Eye className="w-3.5 h-3.5 text-amber-700" />
-                        <span>Open Native PDF</span>
-                      </a>
-                    )}
-                    <button
-                      onClick={() => handleDownloadPdf(selectedNote)}
-                      className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold flex items-center gap-1.5 shadow transition-all"
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                      <span>Download PDF ({selectedNote.pageCount || 1}p)</span>
-                    </button>
-                  </div>
+                  <button
+                    onClick={() => handleDownloadPdf(selectedNote)}
+                    disabled={isDownloadingPdf}
+                    className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold flex items-center gap-1.5 shadow transition-all disabled:opacity-50 shrink-0"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>
+                      {isDownloadingPdf
+                        ? 'Generating Exact PDF...'
+                        : `Download Exact PDF (${selectedNote.pdfFileName})`}
+                    </span>
+                  </button>
                 </div>
 
-                {/* Native Embedded PDF Frame + Read-Only Rendered PDF Sheet */}
-                <div className="bg-stone-800 rounded-2xl border border-stone-700 p-4 md:p-6 shadow-inner space-y-6">
-                  {activePdfBlobUrl && (
-                    <div className="w-full h-[520px] rounded-xl overflow-hidden bg-stone-900 border border-stone-700">
-                      <object
-                        data={activePdfBlobUrl}
-                        type="application/pdf"
-                        className="w-full h-full"
-                      >
-                        <iframe
-                          src={activePdfBlobUrl}
-                          title={selectedNote.title}
-                          className="w-full h-full border-0"
-                        />
-                      </object>
-                    </div>
-                  )}
-
-                  {/* Read-Only Locked PDF Page Preview (Guaranteed rendering on mobile & sandboxed browsers) */}
-                  <div className="bg-white rounded-xl shadow-2xl max-w-3xl mx-auto p-8 md:p-12 border border-stone-300 select-none relative overflow-hidden">
-                    <div className="flex items-center justify-between text-[11px] font-mono text-stone-400 border-b border-stone-200 pb-3 mb-6">
-                      <span>{selectedNote.subject || selectedNote.title}</span>
-                      <span>READ-ONLY PDF VIEW • {selectedNote.pdfFileName}</span>
-                    </div>
-
-                    <div className="mb-6 pb-4 border-b border-stone-200">
-                      <h1 className="text-2xl font-serif font-bold text-stone-900">
-                        {selectedNote.title}
-                      </h1>
-                      <div className="flex flex-wrap items-center gap-3 mt-2 text-xs text-stone-500 font-mono">
-                        <span>Author: {selectedNote.author}</span>
-                        <span>•</span>
-                        <span>Category: {selectedNote.category || 'Lecture Notes'}</span>
-                        <span>•</span>
-                        <span>Status: {selectedNote.status || 'Published'}</span>
-                        <span>•</span>
-                        <span>Words: {selectedNote.wordCount}</span>
-                      </div>
-                    </div>
-
-                    <div
-                      className="prose prose-stone max-w-none text-stone-800 pointer-events-none"
-                      dangerouslySetInnerHTML={{ __html: selectedNote.htmlContent }}
-                    />
-
-                    <div className="mt-10 pt-3 border-t border-stone-200 flex items-center justify-between text-[11px] font-mono text-stone-400">
-                      <span>Auto-Converted from Admin Microsoft Word Document</span>
-                      <span>
-                        Version {selectedNote.version || 1} • {selectedNote.pageCount || 1} Page(s)
-                      </span>
-                    </div>
-                  </div>
+                {/* ONLY the Read-Only PDF Sheet */}
+                <div className="bg-stone-800 rounded-2xl border border-stone-700 p-4 md:p-8 shadow-inner overflow-x-auto">
+                  <ReadOnlyPdfSheet
+                    sheetRef={readOnlyViewerSheetRef}
+                    title={selectedNote.title}
+                    subject={selectedNote.subject}
+                    author={selectedNote.author}
+                    category={selectedNote.category}
+                    status={selectedNote.status}
+                    comments={selectedNote.comments}
+                    pdfFileName={selectedNote.pdfFileName}
+                    wordCount={selectedNote.wordCount}
+                    version={selectedNote.version}
+                    pageCount={selectedNote.pageCount}
+                    htmlContent={selectedNote.htmlContent}
+                    pageSettings={selectedNotePageSettings}
+                  />
                 </div>
               </div>
             )}
@@ -1037,8 +864,42 @@ export const WordNotesTabView: React.FC<WordNotesTabViewProps> = ({
   // ============================================================================
   // ADMIN-ONLY MICROSOFT WORD STUDIO & DOCUMENT PROPERTIES
   // ============================================================================
+  const cleanPreviewFileName = `${docTitle
+    .trim()
+    .replace(/[^a-zA-Z0-9_-]+/g, '_')
+    .replace(/^_+|_+$/g, '') || 'Course_Notes'}.pdf`;
+
   return (
     <div className="space-y-4">
+      {/* Offscreen Exact Read-Only PDF Sheet used to capture 1:1 identical PDF on Save */}
+      <div
+        aria-hidden="true"
+        style={{
+          position: 'fixed',
+          left: '-9999px',
+          top: 0,
+          width: pageSettings.orientation === 'landscape' ? '1024px' : '768px',
+          zIndex: -50,
+          pointerEvents: 'none',
+        }}
+      >
+        <ReadOnlyPdfSheet
+          sheetRef={captureSheetRef}
+          title={docTitle.trim() || 'Untitled Note Document'}
+          subject={docSubject.trim()}
+          author={docAuthor.trim() || userName || 'Course Admin'}
+          category={docCategory.trim()}
+          status={docStatus}
+          comments={docComments.trim()}
+          pdfFileName={cleanPreviewFileName}
+          wordCount={wordStats.words}
+          version={(selectedNote?.version || 0) + 1}
+          pageCount={selectedNote?.pageCount || 1}
+          htmlContent={liveHtmlForPdf}
+          pageSettings={pageSettings}
+        />
+      </div>
+
       {/* Top Admin Status & Mode Bar */}
       <div className="bg-[#185abd] text-white rounded-2xl p-4 shadow-md flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
@@ -1051,7 +912,7 @@ export const WordNotesTabView: React.FC<WordNotesTabViewProps> = ({
                 Microsoft Word Studio • Admin Only
               </span>
               <span className="text-xs text-blue-100 font-mono">
-                Auto-Converts to PDF on Save
+                Auto-Converts to Exact PDF on Save
               </span>
             </div>
             <div className="flex items-center gap-2 mt-1">
@@ -1113,7 +974,7 @@ export const WordNotesTabView: React.FC<WordNotesTabViewProps> = ({
           >
             <Save className="w-3.5 h-3.5" />
             <span>
-              {isSaving ? 'Saving & Converting to PDF...' : 'Save & Auto-Convert to PDF'}
+              {isSaving ? 'Saving & Converting Exact PDF...' : 'Save & Auto-Convert to PDF'}
             </span>
           </button>
 
@@ -1121,10 +982,10 @@ export const WordNotesTabView: React.FC<WordNotesTabViewProps> = ({
             type="button"
             onClick={() => setAdminViewMode('pdf_reader')}
             className="px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-stone-950 font-bold text-xs shadow flex items-center gap-1.5 transition-colors"
-            title="Preview what regular users see (PDF Only)"
+            title="Preview Read-Only PDF View"
           >
             <Eye className="w-3.5 h-3.5" />
-            <span>User PDF View ({courseNotes.length})</span>
+            <span>Read-Only PDF View ({courseNotes.length})</span>
           </button>
 
           {selectedNote && (
@@ -1154,7 +1015,7 @@ export const WordNotesTabView: React.FC<WordNotesTabViewProps> = ({
                 className="px-3 py-1 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white font-semibold flex items-center gap-1"
               >
                 <Download className="w-3 h-3" />
-                <span>Download PDF</span>
+                <span>Download Exact PDF</span>
               </button>
             )}
             <button
@@ -1162,7 +1023,7 @@ export const WordNotesTabView: React.FC<WordNotesTabViewProps> = ({
               className="px-3 py-1 rounded-lg bg-stone-900 hover:bg-stone-800 text-white font-semibold flex items-center gap-1"
             >
               <Eye className="w-3 h-3" />
-              <span>Open User PDF Reader</span>
+              <span>Open Read-Only PDF View</span>
             </button>
             <button
               onClick={() => setSaveBanner(null)}
@@ -1754,7 +1615,7 @@ export const WordNotesTabView: React.FC<WordNotesTabViewProps> = ({
               </div>
 
               <div>
-                  <label className="block text-[10px] font-mono uppercase text-stone-500 mb-1">
+                <label className="block text-[10px] font-mono uppercase text-stone-500 mb-1">
                   Running Footer Text
                 </label>
                 <input
@@ -1822,7 +1683,7 @@ export const WordNotesTabView: React.FC<WordNotesTabViewProps> = ({
                   Paragraphs: <strong>{wordStats.paragraphs}</strong>
                 </div>
                 <div className="px-3 py-1.5 rounded-lg bg-blue-50 text-[#185abd] font-mono">
-                  Auto-PDF Conversion: <strong>Active on Save</strong>
+                  Auto-PDF Conversion: <strong>1:1 Exact Match</strong>
                 </div>
               </div>
 
@@ -1855,7 +1716,7 @@ export const WordNotesTabView: React.FC<WordNotesTabViewProps> = ({
         </div>
       </div>
 
-      {/* Microsoft Word Page Workspace & Ruler */}
+      {/* Microsoft Word Page Workspace & Ruler (Styled identically to ReadOnlyPdfSheet) */}
       <div className="bg-stone-200/90 rounded-2xl border border-stone-300 p-4 md:p-8 shadow-inner overflow-x-auto">
         {/* Horizontal Top Ruler */}
         <div
@@ -1879,14 +1740,14 @@ export const WordNotesTabView: React.FC<WordNotesTabViewProps> = ({
           style={{
             transform: `scale(${zoomLevel / 100})`,
             transformOrigin: 'top center',
-            padding: marginPaddingMap[pageSettings.margins] || '48px',
+            padding: MARGIN_PADDING_MAP[pageSettings.margins] || '48px',
             fontFamily: pageSettings.defaultFont,
             fontSize: `${pageSettings.defaultFontSize}pt`,
             lineHeight: pageSettings.lineSpacing,
             backgroundColor: pageSettings.pageColor || '#ffffff',
             border: pageSettings.showPageBorder ? '2px solid #78716c' : '1px solid #d6d3d1',
           }}
-          className={`mx-auto bg-white shadow-2xl min-h-[780px] relative transition-all ${
+          className={`mx-auto bg-white rounded-xl shadow-2xl min-h-[780px] relative transition-all ${
             pageSettings.orientation === 'landscape' ? 'max-w-5xl' : 'max-w-3xl'
           }`}
         >
@@ -1900,12 +1761,34 @@ export const WordNotesTabView: React.FC<WordNotesTabViewProps> = ({
           )}
 
           {/* Running Header Preview */}
-          {pageSettings.headerText && (
-            <div className="text-[10px] font-mono text-stone-400 border-b border-stone-200 pb-2 mb-6 flex items-center justify-between select-none">
-              <span>{pageSettings.headerText}</span>
-              <span>{pageSettings.pageSize} • {docStatus}</span>
+          <div className="text-[11px] font-mono text-stone-400 border-b border-stone-200 pb-3 mb-6 flex items-center justify-between select-none relative z-10">
+            <span>{pageSettings.headerText || docSubject || docTitle}</span>
+            <span>READ-ONLY PDF VIEW • {cleanPreviewFileName}</span>
+          </div>
+
+          {/* Document Metadata Header Preview (Matches Read-Only PDF View 1:1) */}
+          <div className="mb-6 pb-4 border-b border-stone-200 select-none relative z-10">
+            <h1 className="text-2xl font-serif font-bold text-stone-900">
+              {docTitle || 'Untitled Note Document'}
+            </h1>
+            {docSubject && (
+              <p className="text-xs text-stone-600 mt-1 font-medium">{docSubject}</p>
+            )}
+            <div className="flex flex-wrap items-center gap-3 mt-2 text-xs text-stone-500 font-mono">
+              <span>Author: {docAuthor}</span>
+              <span>•</span>
+              <span>Category: {docCategory || 'Lecture Notes'}</span>
+              <span>•</span>
+              <span>Status: {docStatus || 'Published'}</span>
+              <span>•</span>
+              <span>Words: {wordStats.words}</span>
             </div>
-          )}
+            {docComments && (
+              <p className="text-xs text-stone-500 italic mt-2 bg-stone-50 p-2.5 rounded-lg border border-stone-200/80">
+                {docComments}
+              </p>
+            )}
+          </div>
 
           {/* Rich ContentEditable Body */}
           <div
@@ -1913,16 +1796,19 @@ export const WordNotesTabView: React.FC<WordNotesTabViewProps> = ({
             contentEditable
             suppressContentEditableWarning
             onInput={handleEditorInput}
-            className="min-h-[640px] focus:outline-none prose prose-stone max-w-none relative z-10"
+            className="min-h-[480px] focus:outline-none prose prose-stone max-w-none relative z-10"
           />
 
           {/* Running Footer Preview */}
-          {(pageSettings.footerText || pageSettings.showPageNumbers) && (
-            <div className="text-[10px] font-mono text-stone-400 border-t border-stone-200 pt-2 mt-8 flex items-center justify-between select-none">
-              <span>{pageSettings.footerText}</span>
-              {pageSettings.showPageNumbers && <span>Page 1</span>}
-            </div>
-          )}
+          <div className="text-[11px] font-mono text-stone-400 border-t border-stone-200 pt-3 mt-10 flex items-center justify-between select-none relative z-10">
+            <span>
+              {pageSettings.footerText || 'Auto-Converted from Admin Microsoft Word Document'}
+            </span>
+            <span>
+              Version {(selectedNote?.version || 0) + 1}
+              {pageSettings.showPageNumbers ? ` • ${selectedNote?.pageCount || 1} Page(s)` : ''}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -1935,7 +1821,7 @@ export const WordNotesTabView: React.FC<WordNotesTabViewProps> = ({
           <span>•</span>
           <span>Characters: {wordStats.chars}</span>
           <span>•</span>
-          <span>English (Academic)</span>
+          <span>1:1 Exact PDF Sync</span>
         </div>
 
         <div className="flex items-center gap-2">

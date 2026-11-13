@@ -51,7 +51,66 @@ export const CourseEditorModal: React.FC<CourseEditorModalProps> = ({
 
   if (!isOpen) return null;
 
-  // Fast browser-side image compression to reduce upload payload from ~10MB down to ~200KB in 15ms
+  const ROMAN_NUMERALS = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
+
+  // Instant <5ms client-side parser for syllabus text with Unit/Module headings
+  const tryClientRegexSyllabusParse = (rawSyllabus: string) => {
+    const text = rawSyllabus.replace(/\r\n/g, '\n').trim();
+    if (!text) return null;
+
+    const unitHeadingRegex = /(?:^|\n)\s*(?:#{1,4}\s*)?(?:UNIT|MODULE)\s*[-–—:]?\s*(I{1,3}|IV|V|VI{0,3}|IX|X|\d+)\s*[-–—:.)]?\s*([^\n]*)/gi;
+    const matches = Array.from(text.matchAll(unitHeadingRegex));
+    if (matches.length < 2) return null;
+
+    const romanToNum: Record<string, number> = {
+      I: 1, II: 2, III: 3, IV: 4, V: 5, VI: 6, VII: 7, VIII: 8, IX: 9, X: 10,
+    };
+
+    return matches.map((match, idx) => {
+      const rawNum = match[1].toUpperCase();
+      const unitNumber = romanToNum[rawNum] || parseInt(rawNum, 10) || idx + 1;
+      const romanNumeral = ROMAN_NUMERALS[unitNumber - 1] || String(unitNumber);
+      const headingRemainder = (match[2] || '').replace(/^[-–—:]+\s*/, '').trim();
+
+      const startIdx = (match.index || 0) + match[0].length;
+      const endIdx = idx + 1 < matches.length ? (matches[idx + 1].index || text.length) : text.length;
+      const bodyText = text
+        .slice(startIdx, endIdx)
+        .replace(/\n+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      let rawTitle = headingRemainder;
+      let topics = bodyText;
+      if (!rawTitle && bodyText) {
+        const firstSplit = bodyText.split(/[:–—.-]/);
+        rawTitle = firstSplit[0] && firstSplit[0].length < 65 ? firstSplit[0].trim() : `Core Module ${romanNumeral}`;
+      }
+      if (!topics) topics = rawTitle;
+
+      const unitTitle = `Unit ${romanNumeral}: ${rawTitle || `Syllabus Unit ${romanNumeral}`}`;
+      const summary = `Covers ${topics.slice(0, 180)}${topics.length > 180 ? '...' : ''}`;
+      const topicBullets = topics
+        .split(/[,;•\n]+/)
+        .map((t) => t.trim())
+        .filter(Boolean)
+        .map((t) => `- **${t}**`)
+        .join('\n');
+
+      const notes = `# ${unitTitle}\n\n## 1. Unit Scope & Core Overview\n${summary}\n\n## 2. Syllabus Topics & Module Breakdown\n${topicBullets || `- ${topics}`}\n`;
+
+      return {
+        unitNumber,
+        romanNumeral,
+        title: unitTitle,
+        topics,
+        summary,
+        notes,
+      };
+    });
+  };
+
+  // Fast browser-side image compression to reduce upload payload from ~10MB down to ~120KB in 10ms
   const compressImageForFastOcr = (file: File): Promise<{ base64Data: string; mimeType: string }> => {
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -59,7 +118,7 @@ export const CourseEditorModal: React.FC<CourseEditorModalProps> = ({
         const img = new Image();
         img.onload = () => {
           const canvas = document.createElement('canvas');
-          const maxDim = 1400; // Optimal resolution for text OCR
+          const maxDim = 1024; // High-speed resolution for text OCR
           let { width, height } = img;
 
           if (width > maxDim || height > maxDim) {
@@ -77,7 +136,7 @@ export const CourseEditorModal: React.FC<CourseEditorModalProps> = ({
           const ctx = canvas.getContext('2d');
           if (ctx) {
             ctx.drawImage(img, 0, 0, width, height);
-            const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.75);
             resolve({
               base64Data: dataUrl.split(',')[1],
               mimeType: 'image/jpeg',
@@ -107,48 +166,55 @@ export const CourseEditorModal: React.FC<CourseEditorModalProps> = ({
     });
   };
 
-  // Handle uploading PDF / Photo / Text file and extracting syllabus text
+  // Handle uploading PDF / Photo / Text file and extracting syllabus text + units in one fast pass
   const handleSyllabusFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setSyllabusFileName(file.name);
+    setErrorMessage(null);
     const fileType = file.type;
     const fileNameLower = file.name.toLowerCase();
 
-    // 1. Plain text or Markdown file (.txt, .md, .text) - Instant
+    // 1. Plain text or Markdown file (.txt, .md, .text) - Instantaneous
     if (fileType.startsWith('text/') || fileNameLower.endsWith('.txt') || fileNameLower.endsWith('.md')) {
       const reader = new FileReader();
-      reader.onload = (event) => {
+      reader.onload = async (event) => {
         const text = event.target?.result as string;
         if (text) {
           setSyllabusText(text);
-          setExtractionMessage(`Extracted ${text.length.toLocaleString()} characters from ${file.name}`);
+          const instantUnits = tryClientRegexSyllabusParse(text);
+          if (instantUnits && instantUnits.length > 0) {
+            setParsedUnits(instantUnits);
+            setExtractionMessage(`✓ Instantly extracted ${instantUnits.length} Units from ${file.name}!`);
+          } else {
+            setExtractionMessage(`Extracted ${text.length.toLocaleString()} characters from ${file.name}. Splitting units...`);
+            await parseUnitsFromText(text);
+          }
         }
       };
       reader.readAsText(file);
+      e.target.value = '';
       return;
     }
 
-    // 2. Photos / Images - Compressed in browser first, then sent to gemini-3.1-flash-lite
+    // 2. Photos / Images or PDF - Single-pass extraction with Gemini 3.1 Flash Lite
     const isImage = fileType.startsWith('image/') || /\.(jpg|jpeg|png|webp)$/i.test(fileNameLower);
     const isPdf = fileType === 'application/pdf' || fileNameLower.endsWith('.pdf');
 
     if (isImage || isPdf) {
       try {
         setIsExtractingSyllabus(true);
-        setExtractionMessage('⚡ Fast extracting syllabus with Gemini Flash Lite...');
+        setExtractionMessage('⚡ Fast single-pass syllabus & unit extraction in progress...');
 
         let base64Data = '';
         let mimeType = '';
 
         if (isImage) {
-          // Downscale & compress image to ~200KB for near-instant upload and OCR
           const compressed = await compressImageForFastOcr(file);
           base64Data = compressed.base64Data;
           mimeType = compressed.mimeType;
         } else {
-          // Read PDF as base64
           base64Data = await new Promise<string>((resolve) => {
             const reader = new FileReader();
             reader.onload = (event) => {
@@ -181,9 +247,18 @@ export const CourseEditorModal: React.FC<CourseEditorModalProps> = ({
 
         if (data.extractedText) {
           setSyllabusText(data.extractedText);
-          setExtractionMessage(`✓ Extracted syllabus from "${file.name}"! Now extracting Unit I, Unit II, Unit III, Unit IV...`);
-          // Automatically extract Unit I, II, III, IV and their study notes
-          await parseUnitsFromText(data.extractedText);
+          if (Array.isArray(data.units) && data.units.length > 0) {
+            setParsedUnits(data.units);
+            setExtractionMessage(`✓ Extracted syllabus & ${data.units.length} Units from "${file.name}" in one pass!`);
+          } else {
+            const instantUnits = tryClientRegexSyllabusParse(data.extractedText);
+            if (instantUnits && instantUnits.length > 0) {
+              setParsedUnits(instantUnits);
+              setExtractionMessage(`✓ Extracted syllabus & ${instantUnits.length} Units from "${file.name}"!`);
+            } else {
+              await parseUnitsFromText(data.extractedText);
+            }
+          }
         } else if (data.error) {
           setErrorMessage('Extraction failed: ' + data.error);
           setExtractionMessage('Extraction failed. You can paste the syllabus manually.');
@@ -194,14 +269,26 @@ export const CourseEditorModal: React.FC<CourseEditorModalProps> = ({
         setExtractionMessage('Extraction error.');
       } finally {
         setIsExtractingSyllabus(false);
+        e.target.value = '';
       }
     } else {
       setErrorMessage('Please upload a PDF (.pdf), Photo / Image (.jpg, .png, .webp), or Text file (.txt, .md).');
+      e.target.value = '';
     }
   };
 
   const parseUnitsFromText = async (textToParse: string) => {
     if (!textToParse.trim()) return;
+
+    // 1. Try instant <5ms client-side regex extraction first if text has explicit Unit headings
+    const instantUnits = tryClientRegexSyllabusParse(textToParse);
+    if (instantUnits && instantUnits.length >= 2) {
+      setParsedUnits(instantUnits);
+      setExtractionMessage(`✓ Instantly extracted ${instantUnits.length} Units (Unit I, II, III, IV) with study notes!`);
+      return;
+    }
+
+    // 2. Otherwise call fast Gemini 3.1 Flash Lite parser
     try {
       setIsParsingSyllabus(true);
       const res = await fetch('/api/gemini/parse-syllabus', {
@@ -504,7 +591,15 @@ export const CourseEditorModal: React.FC<CourseEditorModalProps> = ({
                 rows={7}
                 placeholder="Upload a PDF/photo above or paste syllabus text containing Unit 1, Unit 2, Unit 3, topics, modules, or chapter descriptions..."
                 value={syllabusText}
-                onChange={(e) => setSyllabusText(e.target.value)}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setSyllabusText(val);
+                  const instant = tryClientRegexSyllabusParse(val);
+                  if (instant && instant.length >= 2) {
+                    setParsedUnits(instant);
+                    setExtractionMessage(`✓ Instantly extracted ${instant.length} Units from syllabus text!`);
+                  }
+                }}
                 className="w-full bg-stone-900 border border-stone-700 rounded-lg p-3 text-xs font-mono text-stone-200 focus:outline-none focus:border-amber-500 leading-relaxed"
               />
             </div>

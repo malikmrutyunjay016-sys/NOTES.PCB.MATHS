@@ -6,7 +6,6 @@ import {
   summarizeUploadedBook,
   extractSyllabusFromFile,
   parseBulkQuestions,
-  extractPdfQuestions,
 } from './gemini';
 
 export const apiRouter = Router();
@@ -134,7 +133,7 @@ apiRouter.post('/gemini/summarize-book', async (req: Request, res: Response) => 
   }
 });
 
-// Handle extracting syllabus text from uploaded PDF, Image/Photo, or Document
+// Handle extracting syllabus text and structured units from uploaded PDF, Image/Photo, or Document in one pass
 apiRouter.post('/gemini/extract-syllabus', async (req: Request, res: Response) => {
   try {
     const { base64Data, mimeType, fileName } = req.body || {};
@@ -142,13 +141,20 @@ apiRouter.post('/gemini/extract-syllabus', async (req: Request, res: Response) =
       return sendJson(res, 400, { error: 'base64Data and mimeType are required.' });
     }
 
-    const extractedText = await extractSyllabusFromFile({
+    const result = await extractSyllabusFromFile({
       base64Data,
       mimeType,
       fileName,
     });
 
-    return sendJson(res, 200, { extractedText });
+    if (typeof result === 'string') {
+      return sendJson(res, 200, { extractedText: result, units: [] });
+    }
+
+    return sendJson(res, 200, {
+      extractedText: result.extractedText,
+      units: result.units || [],
+    });
   } catch (error: any) {
     console.error('API /gemini/extract-syllabus error:', error);
     return sendJson(res, 500, { error: error.message || 'Error extracting syllabus text' });
@@ -176,29 +182,3 @@ apiRouter.post('/gemini/parse-bulk-questions', async (req: Request, res: Respons
     return sendJson(res, 500, { error: error.message || 'Error parsing bulk questions' });
   }
 });
-
-// Handle extracting questions and answers from uploaded PDF file
-apiRouter.post('/gemini/extract-pdf-questions', async (req: Request, res: Response) => {
-  try {
-    const { base64Data, mimeType, fileName, courseTitle, courseCode, unitTitle } = req.body || {};
-    if (!base64Data || !mimeType) {
-      return sendJson(res, 400, { error: 'base64Data and mimeType are required.' });
-    }
-
-    const questions = await extractPdfQuestions({
-      base64Data,
-      mimeType,
-      fileName: fileName || 'questions.pdf',
-      courseTitle: courseTitle || '',
-      courseCode: courseCode || '',
-      unitTitle: unitTitle || '',
-    });
-
-    return sendJson(res, 200, { questions });
-  } catch (error: any) {
-    console.error('API /gemini/extract-pdf-questions error:', error);
-    return sendJson(res, 500, { error: error.message || 'Error extracting PDF questions' });
-  }
-});
-
-

@@ -66,7 +66,6 @@ export const UnitNotesView: React.FC<UnitNotesViewProps> = ({
 }) => {
   const [expandedQuestions, setExpandedQuestions] = useState<Record<string, boolean>>({});
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [isExtractingPdf, setIsExtractingPdf] = useState(false);
 
   const sortedUnits = [...units].sort((a, b) => a.unitNumber - b.unitNumber);
   const currentUnit = activeUnit || sortedUnits[0] || null;
@@ -78,84 +77,6 @@ export const UnitNotesView: React.FC<UnitNotesViewProps> = ({
 
   const toggleQuestion = (qId: string) => {
     setExpandedQuestions((prev) => ({ ...prev, [qId]: !prev[qId] }));
-  };
-
-  const handleUploadPdfQuestions = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !currentUnit) return;
-
-    try {
-      setIsExtractingPdf(true);
-      setErrorMessage(null);
-
-      const reader = new FileReader();
-      reader.onload = async () => {
-        const base64String = (reader.result as string).split(',')[1];
-        try {
-          const res = await fetch('/api/gemini/extract-pdf-questions', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              base64Data: base64String,
-              mimeType: file.type || 'application/pdf',
-              fileName: file.name,
-              courseTitle: course.title,
-              courseCode: course.code,
-              unitTitle: currentUnit.title,
-            }),
-          });
-
-          const data = await res.json();
-          if (data.questions && Array.isArray(data.questions)) {
-            if (onSaveQuestion) {
-              await Promise.all(
-                data.questions.map((item: any) => {
-                  const rawMarksStr = String(item.marks || '5');
-                  const matchedNum = parseInt(rawMarksStr.replace(/\D/g, ''), 10);
-                  const m = isNaN(matchedNum) ? 5 : matchedNum;
-                  const sec = item.group || item.section || getSectionForMarks(m);
-                  let targetUnitId = currentUnit.id;
-                  if (item.unitNumber) {
-                    const foundUnit = units.find((u) => u.unitNumber === Number(item.unitNumber));
-                    if (foundUnit) {
-                      targetUnitId = foundUnit.id;
-                    }
-                  }
-
-                  return onSaveQuestion({
-                    courseId: course.id,
-                    unitId: targetUnitId,
-                    question: item.question,
-                    answer: item.answer,
-                    marks: m,
-                    section: sec,
-                    answerFormat: course.answerFormat || 'detailed',
-                    isCurated: true,
-                    thinkingUsed: false,
-                    groundedInSearch: true,
-                    modelUsed: `PDF Question Bank Extractor (${file.name})`,
-                    sourceBooks: books.map((b) => b.title).join(', '),
-                    webSources: [],
-                    askedBy: userId || 'guest-admin',
-                    askedByName: `${userName || 'Admin'} (${sec} • ${m}M Extracted)`,
-                  });
-                })
-              );
-            }
-          } else if (data.error) {
-            setErrorMessage(data.error);
-          }
-        } catch (apiErr: any) {
-          setErrorMessage(apiErr.message || 'Failed to extract Q&A from PDF');
-        } finally {
-          setIsExtractingPdf(false);
-        }
-      };
-      reader.readAsDataURL(file);
-    } catch (err: any) {
-      setIsExtractingPdf(false);
-      setErrorMessage(err.message || 'Error reading PDF file');
-    }
   };
 
   // Group questions into sections Group A, B, C, D sorted by marks (1, 2, 5, 8 marks distribution)
@@ -329,39 +250,6 @@ export const UnitNotesView: React.FC<UnitNotesViewProps> = ({
             <div className="max-w-none text-stone-800">
               <MarkdownView content={currentUnit.notes || 'No detailed notes generated yet.'} />
             </div>
-
-            {/* Admin PDF Question Bank Box Above Unit Questions */}
-            {isAdmin && (
-              <div className="mt-12 p-6 rounded-2xl bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border border-amber-500/30 flex flex-col md:flex-row items-center justify-between gap-6 shadow-sm">
-                <div className="space-y-1.5">
-                  <div className="flex items-center gap-2">
-                    <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-800 text-[10px] font-mono font-bold">
-                      Admin Question Bank OCR
-                    </span>
-                    <span className="text-xs text-stone-500 font-mono">PDF Question Paper & Answer Parser</span>
-                  </div>
-                  <h4 className="font-serif font-bold text-stone-900 text-base md:text-lg">
-                    Upload Exam Question Bank PDF (Questions, Answers, Groups, Marks & Units)
-                  </h4>
-                  <p className="text-xs text-stone-600 max-w-2xl leading-relaxed">
-                    Upload a PDF containing exam questions and answers. Gemini will automatically extract information about questions, answers, groups (A, B, C, D), marks (1M, 2M, 5M, 8M), and syllabus units, categorizing them immediately below.
-                  </p>
-                </div>
-                <div className="shrink-0">
-                  <label className={`cursor-pointer inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold shadow transition-all ${isExtractingPdf ? 'opacity-50 pointer-events-none' : ''}`}>
-                    <FileText className="w-4 h-4" />
-                    <span>{isExtractingPdf ? 'Extracting Q&A, Groups & Marks...' : 'Upload Question Bank PDF'}</span>
-                    <input
-                      type="file"
-                      accept="application/pdf"
-                      onChange={handleUploadPdfQuestions}
-                      disabled={isExtractingPdf}
-                      className="hidden"
-                    />
-                  </label>
-                </div>
-              </div>
-            )}
 
             {/* Categorized Unit Questions by Group & Marks */}
             {unitQuestions.length > 0 && (
