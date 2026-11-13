@@ -10,7 +10,7 @@ import {
   where,
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from './firebase';
-import { Course, Unit, Book, Question } from '../types';
+import { Course, Unit, Book, Question, WordNoteDocument } from '../types';
 
 export const ADMIN_EMAIL = 'malikmrutyunjay016@gmail.com';
 
@@ -231,11 +231,13 @@ export async function createQuestion(q: Question): Promise<void> {
       unitId: q.unitId || '',
       question: q.question.slice(0, 2000),
       answer: q.answer.slice(0, 50000),
+      marks: typeof q.marks === 'number' ? q.marks : 5,
+      section: (q.section || '').slice(0, 50),
       answerFormat: (q.answerFormat || 'detailed').slice(0, 100),
       isCurated: Boolean(q.isCurated),
       thinkingUsed: Boolean(q.thinkingUsed),
       groundedInSearch: Boolean(q.groundedInSearch),
-      modelUsed: (q.modelUsed || 'gemini-3.8-flash').slice(0, 50),
+      modelUsed: (q.modelUsed || 'gemini-3.8-flash').slice(0, 100),
       sourceBooks: (q.sourceBooks || '').slice(0, 1000),
       askedBy: q.askedBy,
       askedByName: (q.askedByName || 'Anonymous Student').slice(0, 100),
@@ -258,3 +260,74 @@ export async function deleteQuestion(questionId: string): Promise<void> {
     handleFirestoreError(error, OperationType.DELETE, path);
   }
 }
+
+// ----------------- WORD NOTES (ADMIN WORD -> USER PDF) -----------------
+
+export function subscribeWordNotes(
+  onData: (notes: WordNoteDocument[]) => void,
+  onError?: (err: any) => void
+) {
+  const colPath = 'word_notes';
+  const q = query(collection(db, colPath));
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const list: WordNoteDocument[] = [];
+      snapshot.forEach((d) => {
+        list.push({ id: d.id, ...d.data() } as WordNoteDocument);
+      });
+      list.sort((a, b) => new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime());
+      onData(list);
+    },
+    (error) => {
+      onError?.(error);
+      try {
+        handleFirestoreError(error, OperationType.GET, colPath);
+      } catch {
+        // Logged via handleFirestoreError
+      }
+    }
+  );
+}
+
+export async function saveWordNote(note: WordNoteDocument): Promise<void> {
+  const path = `word_notes/${note.id}`;
+  try {
+    const payload = {
+      courseId: note.courseId.slice(0, 128),
+      unitId: (note.unitId || '').slice(0, 128),
+      title: note.title.slice(0, 200),
+      subject: (note.subject || '').slice(0, 200),
+      author: (note.author || 'Course Admin').slice(0, 150),
+      category: (note.category || 'Lecture Notes').slice(0, 100),
+      keywords: (note.keywords || '').slice(0, 500),
+      status: (note.status || 'Published').slice(0, 50),
+      comments: (note.comments || '').slice(0, 2000),
+      htmlContent: note.htmlContent.slice(0, 300000),
+      plainText: (note.plainText || '').slice(0, 200000),
+      pageSettingsJson: (note.pageSettingsJson || '{}').slice(0, 5000),
+      pdfDataUrl: note.pdfDataUrl.slice(0, 750000),
+      pdfFileName: (note.pdfFileName || 'Notes.pdf').slice(0, 255),
+      wordCount: Number(note.wordCount) || 0,
+      charCount: Number(note.charCount) || 0,
+      pageCount: Number(note.pageCount) || 1,
+      version: Number(note.version) || 1,
+      createdBy: note.createdBy.slice(0, 128),
+      createdAt: note.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    await setDoc(doc(db, 'word_notes', note.id), payload, { merge: true });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function deleteWordNote(noteId: string): Promise<void> {
+  const path = `word_notes/${noteId}`;
+  try {
+    await deleteDoc(doc(db, 'word_notes', noteId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+

@@ -120,3 +120,44 @@ export const ANSWER_FORMATS: AnswerFormatOption[] = [
     recommendedFor: 'Official University Paper & Semester Finals',
   },
 ];
+
+export interface WordPageSettings {
+  pageSize: 'A4' | 'Letter' | 'Legal';
+  orientation: 'portrait' | 'landscape';
+  margins: 'normal' | 'narrow' | 'moderate' | 'wide';
+  lineSpacing: '1.0' | '1.15' | '1.5' | '2.0';
+  defaultFont: string;
+  defaultFontSize: number;
+  headerText: string;
+  footerText: string;
+  watermark: string;
+  showPageNumbers: boolean;
+  showPageBorder: boolean;
+  pageColor: string;
+}
+
+export interface WordNoteDocument {
+  id: string;
+  courseId: string;
+  unitId?: string;
+  title: string;
+  subject?: string;
+  author: string;
+  category?: string;
+  keywords?: string;
+  status?: 'Draft' | 'Final' | 'Published' | 'Confidential';
+  comments?: string;
+  htmlContent: string;
+  plainText: string;
+  pageSettingsJson?: string;
+  pdfDataUrl: string;
+  pdfFileName: string;
+  wordCount: number;
+  charCount: number;
+  pageCount: number;
+  version: number;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+

@@ -66,12 +66,15 @@
         "unitId": { "type": "string", "maxLength": 128 },
         "question": { "type": "string", "maxLength": 2000 },
         "answer": { "type": "string", "maxLength": 50000 },
+        "marks": { "type": "number" },
+        "section": { "type": "string", "maxLength": 50 },
         "answerFormat": { "type": "string", "maxLength": 100 },
         "isCurated": { "type": "boolean" },
         "thinkingUsed": { "type": "boolean" },
         "groundedInSearch": { "type": "boolean" },
-        "modelUsed": { "type": "string", "maxLength": 50 },
+        "modelUsed": { "type": "string", "maxLength": 100 },
         "sourceBooks": { "type": "string", "maxLength": 1000 },
+        "webSources": { "type": "array" },
         "askedBy": { "type": "string", "maxLength": 128 },
         "askedByName": { "type": "string", "maxLength": 100 },
         "createdAt": { "type": "string", "format": "date-time" }
@@ -88,6 +91,36 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["email", "role"]
+    },
+    "WordNote": {
+      "title": "WordNote",
+      "description": "Microsoft Word document edited by admin and auto-converted to PDF for users",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "courseId": { "type": "string", "maxLength": 128 },
+        "unitId": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "maxLength": 200 },
+        "subject": { "type": "string", "maxLength": 200 },
+        "author": { "type": "string", "maxLength": 150 },
+        "category": { "type": "string", "maxLength": 100 },
+        "keywords": { "type": "string", "maxLength": 500 },
+        "status": { "type": "string", "maxLength": 50 },
+        "comments": { "type": "string", "maxLength": 2000 },
+        "htmlContent": { "type": "string", "maxLength": 300000 },
+        "plainText": { "type": "string", "maxLength": 200000 },
+        "pageSettingsJson": { "type": "string", "maxLength": 5000 },
+        "pdfDataUrl": { "type": "string", "maxLength": 800000 },
+        "pdfFileName": { "type": "string", "maxLength": 255 },
+        "wordCount": { "type": "number" },
+        "charCount": { "type": "number" },
+        "pageCount": { "type": "number" },
+        "version": { "type": "number" },
+        "createdBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["courseId", "title", "htmlContent", "pdfDataUrl", "createdBy", "createdAt"]
     }
   },
   "firestore": {
@@ -110,6 +143,10 @@
     "/admins/{adminId}": {
       "schema": { "$ref": "Admin" },
       "description": "Verified admin users"
+    },
+    "/word_notes/{noteId}": {
+      "schema": { "$ref": "WordNote" },
+      "description": "Admin Word documents auto-converted to PDF for student reading"
     }
   }
 }

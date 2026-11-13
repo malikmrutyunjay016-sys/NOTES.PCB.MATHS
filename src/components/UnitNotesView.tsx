@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import {
   BookOpen,
   Sparkles,
@@ -11,6 +11,7 @@ import {
   ChevronUp,
   Globe,
   ExternalLink,
+  Trash2,
 } from 'lucide-react';
 import { Course, Unit, Book, Question, getSectionForMarks } from '../types';
 import { MarkdownView } from './MarkdownView';
@@ -41,6 +42,7 @@ interface UnitNotesViewProps {
   onAskQuestionAboutUnit: (unit: Unit) => void;
   onOpenEditCourse?: () => void;
   onSaveQuestion?: (q: Omit<Question, 'id' | 'createdAt'>) => Promise<void>;
+  onDeleteQuestion?: (questionId: string) => Promise<void>;
   userId?: string;
   userName?: string;
 }
@@ -58,6 +60,7 @@ export const UnitNotesView: React.FC<UnitNotesViewProps> = ({
   onAskQuestionAboutUnit,
   onOpenEditCourse,
   onSaveQuestion,
+  onDeleteQuestion,
   userId,
   userName,
 }) => {
@@ -105,37 +108,39 @@ export const UnitNotesView: React.FC<UnitNotesViewProps> = ({
           const data = await res.json();
           if (data.questions && Array.isArray(data.questions)) {
             if (onSaveQuestion) {
-              for (const item of data.questions) {
-                const rawMarksStr = String(item.marks || '5');
-                const matchedNum = parseInt(rawMarksStr.replace(/\D/g, ''), 10);
-                const m = isNaN(matchedNum) ? 5 : matchedNum;
-                const sec = item.group || item.section || getSectionForMarks(m);
-                let targetUnitId = currentUnit.id;
-                if (item.unitNumber) {
-                  const foundUnit = units.find((u) => u.unitNumber === Number(item.unitNumber));
-                  if (foundUnit) {
-                    targetUnitId = foundUnit.id;
+              await Promise.all(
+                data.questions.map((item: any) => {
+                  const rawMarksStr = String(item.marks || '5');
+                  const matchedNum = parseInt(rawMarksStr.replace(/\D/g, ''), 10);
+                  const m = isNaN(matchedNum) ? 5 : matchedNum;
+                  const sec = item.group || item.section || getSectionForMarks(m);
+                  let targetUnitId = currentUnit.id;
+                  if (item.unitNumber) {
+                    const foundUnit = units.find((u) => u.unitNumber === Number(item.unitNumber));
+                    if (foundUnit) {
+                      targetUnitId = foundUnit.id;
+                    }
                   }
-                }
 
-                await onSaveQuestion({
-                  courseId: course.id,
-                  unitId: targetUnitId,
-                  question: item.question,
-                  answer: item.answer,
-                  marks: m,
-                  section: sec,
-                  answerFormat: course.answerFormat || 'detailed',
-                  isCurated: true,
-                  thinkingUsed: false,
-                  groundedInSearch: true,
-                  modelUsed: `PDF Question Bank Extractor (${file.name})`,
-                  sourceBooks: books.map((b) => b.title).join(', '),
-                  webSources: [],
-                  askedBy: userId || 'guest-admin',
-                  askedByName: `${userName || 'Admin'} (${sec} • ${m}M Extracted)`,
-                });
-              }
+                  return onSaveQuestion({
+                    courseId: course.id,
+                    unitId: targetUnitId,
+                    question: item.question,
+                    answer: item.answer,
+                    marks: m,
+                    section: sec,
+                    answerFormat: course.answerFormat || 'detailed',
+                    isCurated: true,
+                    thinkingUsed: false,
+                    groundedInSearch: true,
+                    modelUsed: `PDF Question Bank Extractor (${file.name})`,
+                    sourceBooks: books.map((b) => b.title).join(', '),
+                    webSources: [],
+                    askedBy: userId || 'guest-admin',
+                    askedByName: `${userName || 'Admin'} (${sec} • ${m}M Extracted)`,
+                  });
+                })
+              );
             }
           } else if (data.error) {
             setErrorMessage(data.error);
@@ -169,16 +174,18 @@ export const UnitNotesView: React.FC<UnitNotesViewProps> = ({
   };
 
   for (const q of unitQuestions) {
-    const sec = q.section || getSectionForMarks(q.marks);
+    const sec = getSectionForMarks(q.marks);
     if (groupedQuestions[sec]) {
       groupedQuestions[sec].push(q);
+    } else if (q.section && groupedQuestions[q.section]) {
+      groupedQuestions[q.section].push(q);
     } else {
       groupedQuestions['Group B'].push(q);
     }
   }
 
   for (const key of Object.keys(groupedQuestions)) {
-    groupedQuestions[key].sort((a, b) => (b.marks || 5) - (a.marks || 5));
+    groupedQuestions[key].sort((a, b) => (a.marks || 5) - (b.marks || 5));
   }
 
   if (sortedUnits.length === 0) {
@@ -323,7 +330,7 @@ export const UnitNotesView: React.FC<UnitNotesViewProps> = ({
               <MarkdownView content={currentUnit.notes || 'No detailed notes generated yet.'} />
             </div>
 
-            {/* Admin PDF Question Bank Box Above Curated Questions */}
+            {/* Admin PDF Question Bank Box Above Unit Questions */}
             {isAdmin && (
               <div className="mt-12 p-6 rounded-2xl bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border border-amber-500/30 flex flex-col md:flex-row items-center justify-between gap-6 shadow-sm">
                 <div className="space-y-1.5">
@@ -356,7 +363,94 @@ export const UnitNotesView: React.FC<UnitNotesViewProps> = ({
               </div>
             )}
 
+            {/* Categorized Unit Questions by Group & Marks */}
+            {unitQuestions.length > 0 && (
+              <div className="mt-8 space-y-6">
+                {sectionsConfig.map((sec) => {
+                  const secQuestions = groupedQuestions[sec.key] || [];
+                  if (secQuestions.length === 0) return null;
 
+                  return (
+                    <div key={sec.key} className="space-y-3">
+                      <div className="flex items-center gap-3 bg-stone-900 text-stone-100 px-4 py-2.5 rounded-xl shadow-xs">
+                        <span className="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
+                        <span className="text-xs font-mono font-bold uppercase tracking-wider">{sec.label}</span>
+                        <span className="ml-auto text-[11px] font-mono bg-stone-800 px-2 py-0.5 rounded text-amber-300">
+                          {secQuestions.length} {secQuestions.length === 1 ? 'Question' : 'Questions'}
+                        </span>
+                      </div>
+
+                      <div className="space-y-3">
+                        {secQuestions.map((q, idx) => {
+                          const isExpanded = Boolean(expandedQuestions[q.id]);
+                          return (
+                            <div
+                              key={q.id}
+                              className="rounded-xl border border-stone-200 bg-stone-50 hover:border-amber-300 transition-all overflow-hidden shadow-xs"
+                            >
+                              <button
+                                onClick={() => toggleQuestion(q.id)}
+                                className="w-full text-left p-4 flex items-start justify-between gap-3"
+                              >
+                                <div className="flex items-start gap-3">
+                                  <span className="w-7 h-7 rounded-lg bg-amber-100 text-amber-900 text-xs font-mono font-bold flex items-center justify-center shrink-0 mt-0.5 shadow-xs">
+                                    {q.marks ? `${q.marks}M` : `${idx + 1}`}
+                                  </span>
+                                  <div>
+                                    <div className="font-semibold text-stone-900 text-sm leading-snug">
+                                      {q.question}
+                                    </div>
+                                    <div className="flex flex-wrap items-center gap-2 mt-1.5 text-[11px] text-stone-500 font-mono">
+                                      <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 font-semibold">
+                                        {sec.key} • {q.marks || 5} {Number(q.marks) === 1 ? 'Mark' : 'Marks'}
+                                      </span>
+                                      <span>•</span>
+                                      <span>{q.askedByName || 'Course Admin'}</span>
+                                    </div>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  {isAdmin && onDeleteQuestion && (
+                                    <span
+                                      role="button"
+                                      tabIndex={0}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        onDeleteQuestion(q.id);
+                                      }}
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter' || e.key === ' ') {
+                                          e.stopPropagation();
+                                          onDeleteQuestion(q.id);
+                                        }
+                                      }}
+                                      className="p-1.5 rounded-lg text-stone-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                                      title="Delete Question"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </span>
+                                  )}
+                                  <div className="p-1 text-stone-400">
+                                    {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                                  </div>
+                                </div>
+                              </button>
+
+                              {isExpanded && (
+                                <div className="p-5 pt-0 border-t border-stone-200/80 bg-white">
+                                  <div className="text-xs text-stone-500 font-mono uppercase mb-2 mt-3">Model Answer:</div>
+                                  <MarkdownView content={q.answer} />
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       )}

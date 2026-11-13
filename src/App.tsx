@@ -22,6 +22,7 @@ import {
   subscribeUnits,
   subscribeBooks,
   subscribeQuestions,
+  subscribeWordNotes,
   createOrUpdateCourse,
   deleteCourse,
   createOrUpdateUnit,
@@ -29,40 +30,37 @@ import {
   deleteBook,
   createQuestion,
   deleteQuestion,
+  saveWordNote,
+  deleteWordNote,
   ADMIN_EMAIL,
 } from './lib/dataService';
-import {
-  INITIAL_COURSES,
-  INITIAL_BOOKS,
-  INITIAL_UNITS,
-  INITIAL_QUESTIONS,
-} from './lib/mockData';
-import { Course, Unit, Book, Question } from './types';
+import { Course, Unit, Book, Question, WordNoteDocument } from './types';
 import { Header } from './components/Header';
 import { UnitNotesView } from './components/UnitNotesView';
 import { ReferenceLibraryView } from './components/ReferenceLibraryView';
+import { WordNotesTabView } from './components/WordNotesTabView';
 import { BookManagerModal } from './components/BookManagerModal';
 import { CourseEditorModal } from './components/CourseEditorModal';
 import { AddQuestionModal } from './components/AddQuestionModal';
+import { MobileFooterNav } from './components/MobileFooterNav';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [demoAdmin, setDemoAdmin] = useState<boolean>(true);
 
-  // App Data State
-  const [courses, setCourses] = useState<Course[]>(INITIAL_COURSES);
-  const [units, setUnits] = useState<Unit[]>(INITIAL_UNITS);
-  const [books, setBooks] = useState<Book[]>(INITIAL_BOOKS);
-  const [questions, setQuestions] = useState<Question[]>(INITIAL_QUESTIONS);
+  // App Data State (Initialized empty — no default courses, units, books, or questions)
+  const [courses, setCourses] = useState<Course[]>([]);
+  const [units, setUnits] = useState<Unit[]>([]);
+  const [books, setBooks] = useState<Book[]>([]);
+  const [questions, setQuestions] = useState<Question[]>([]);
+  const [wordNotes, setWordNotes] = useState<WordNoteDocument[]>([]);
 
   // Selected Active Course & Unit
-  const [selectedCourse, setSelectedCourse] = useState<Course | null>(
-    INITIAL_COURSES.length > 0 ? INITIAL_COURSES[0] : null
-  );
+  const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
   const [selectedUnit, setSelectedUnit] = useState<Unit | null>(null);
 
-  // Active View Tab: 'units' | 'library' | 'course_settings'
-  const [activeTab, setActiveTab] = useState<'units' | 'library' | 'course_settings'>('units');
+  // Active View Tab: 'units' | 'library' | 'notes' | 'course_settings'
+  const [activeTab, setActiveTab] = useState<'units' | 'library' | 'notes' | 'course_settings'>('units');
 
   // Modals
   const [isBookManagerOpen, setIsBookManagerOpen] = useState(false);
@@ -97,9 +95,10 @@ export default function App() {
   useEffect(() => {
     const unsubCourses = subscribeCourses(
       (firestoreCourses) => {
-        if (firestoreCourses && firestoreCourses.length > 0) {
+        if (firestoreCourses.length > 0 || auth.currentUser) {
           setCourses(firestoreCourses);
           setSelectedCourse((prev) => {
+            if (firestoreCourses.length === 0) return null;
             if (!prev) return firestoreCourses[0];
             return firestoreCourses.find((c) => c.id === prev.id) || firestoreCourses[0];
           });
@@ -110,7 +109,7 @@ export default function App() {
 
     const unsubUnits = subscribeUnits(
       (firestoreUnits) => {
-        if (firestoreUnits && firestoreUnits.length > 0) {
+        if (firestoreUnits.length > 0 || auth.currentUser) {
           setUnits(firestoreUnits);
         }
       },
@@ -119,7 +118,7 @@ export default function App() {
 
     const unsubBooks = subscribeBooks(
       (firestoreBooks) => {
-        if (firestoreBooks && firestoreBooks.length > 0) {
+        if (firestoreBooks.length > 0 || auth.currentUser) {
           setBooks(firestoreBooks);
         }
       },
@@ -128,11 +127,20 @@ export default function App() {
 
     const unsubQuestions = subscribeQuestions(
       (firestoreQuestions) => {
-        if (firestoreQuestions && firestoreQuestions.length > 0) {
+        if (firestoreQuestions.length > 0 || auth.currentUser) {
           setQuestions(firestoreQuestions);
         }
       },
       (err) => console.log('Questions listener status:', err?.message)
+    );
+
+    const unsubWordNotes = subscribeWordNotes(
+      (firestoreWordNotes) => {
+        if (firestoreWordNotes.length > 0 || auth.currentUser) {
+          setWordNotes(firestoreWordNotes);
+        }
+      },
+      (err) => console.log('WordNotes listener status:', err?.message)
     );
 
     return () => {
@@ -140,10 +148,11 @@ export default function App() {
       unsubUnits();
       unsubBooks();
       unsubQuestions();
+      unsubWordNotes();
     };
   }, []);
 
-  // Filter units and books for current course
+  // Filter units, books, questions, and wordNotes for current course
   const currentUnits = selectedCourse
     ? units.filter((u) => u.courseId === selectedCourse.id)
     : [];
@@ -155,6 +164,10 @@ export default function App() {
   const currentQuestions = selectedCourse
     ? questions.filter((q) => q.courseId === selectedCourse.id)
     : questions;
+
+  const currentWordNotes = selectedCourse
+    ? wordNotes.filter((n) => n.courseId === selectedCourse.id || n.courseId === 'general')
+    : wordNotes;
 
   // Handlers for Course Management
   const handleSaveCourse = async (
@@ -269,6 +282,49 @@ export default function App() {
         await createQuestion(newQ);
       } catch (err) {
         console.warn('Firestore question write notice:', err);
+      }
+    }
+  };
+
+  const handleDeleteQuestion = async (questionId: string) => {
+    setQuestions((prev) => prev.filter((q) => q.id !== questionId));
+    if (currentUser) {
+      try {
+        await deleteQuestion(questionId);
+      } catch (err) {
+        console.warn('Firestore question delete notice:', err);
+      }
+    }
+  };
+
+  // Handlers for Word Notes (Admin MS Word -> Auto-PDF for Users)
+  const handleSaveWordNote = async (noteDoc: WordNoteDocument) => {
+    setWordNotes((prev) => {
+      const idx = prev.findIndex((n) => n.id === noteDoc.id);
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx] = noteDoc;
+        return next;
+      }
+      return [noteDoc, ...prev];
+    });
+
+    if (currentUser) {
+      try {
+        await saveWordNote(noteDoc);
+      } catch (err) {
+        console.warn('Firestore word_note write notice:', err);
+      }
+    }
+  };
+
+  const handleDeleteWordNote = async (noteId: string) => {
+    setWordNotes((prev) => prev.filter((n) => n.id !== noteId));
+    if (currentUser) {
+      try {
+        await deleteWordNote(noteId);
+      } catch (err) {
+        console.warn('Firestore word_note delete notice:', err);
       }
     }
   };
@@ -411,6 +467,18 @@ export default function App() {
                 </button>
 
                 <button
+                  onClick={() => setActiveTab('notes')}
+                  className={`flex items-center gap-2 py-3 px-4 text-xs font-semibold border-b-2 transition-all whitespace-nowrap ${
+                    activeTab === 'notes'
+                      ? 'border-amber-600 text-amber-900 font-bold'
+                      : 'border-transparent text-stone-600 hover:text-stone-900'
+                  }`}
+                >
+                  <FileText className="w-4 h-4 text-amber-600" />
+                  <span>Notes ({currentWordNotes.length})</span>
+                </button>
+
+                <button
                   onClick={() => setActiveTab('library')}
                   className={`flex items-center gap-2 py-3 px-4 text-xs font-semibold border-b-2 transition-all whitespace-nowrap ${
                     activeTab === 'library'
@@ -457,6 +525,20 @@ export default function App() {
                   setIsCourseEditorOpen(true);
                 }}
                 onSaveQuestion={handleSaveQuestion}
+                onDeleteQuestion={handleDeleteQuestion}
+                userId={currentUser?.uid || 'guest-admin'}
+                userName={currentUser?.displayName || (currentUser?.email ? currentUser.email.split('@')[0] : 'Course Admin')}
+              />
+            )}
+
+            {activeTab === 'notes' && (
+              <WordNotesTabView
+                course={selectedCourse}
+                units={currentUnits}
+                wordNotes={currentWordNotes}
+                isAdmin={isAdmin}
+                onSaveWordNote={handleSaveWordNote}
+                onDeleteWordNote={handleDeleteWordNote}
                 userId={currentUser?.uid || 'guest-admin'}
                 userName={currentUser?.displayName || (currentUser?.email ? currentUser.email.split('@')[0] : 'Course Admin')}
               />
@@ -472,6 +554,17 @@ export default function App() {
               />
             )}
           </div>
+        ) : activeTab === 'notes' ? (
+          <WordNotesTabView
+            course={null}
+            units={[]}
+            wordNotes={wordNotes}
+            isAdmin={isAdmin}
+            onSaveWordNote={handleSaveWordNote}
+            onDeleteWordNote={handleDeleteWordNote}
+            userId={currentUser?.uid || 'guest-admin'}
+            userName={currentUser?.displayName || (currentUser?.email ? currentUser.email.split('@')[0] : 'Course Admin')}
+          />
         ) : (
           <div className="bg-white rounded-2xl border border-stone-200/90 p-8 sm:p-12 shadow-sm text-center max-w-3xl mx-auto my-6">
             <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-amber-600 to-amber-400 p-0.5 mx-auto mb-4 shadow-md flex items-center justify-center">
@@ -506,9 +599,9 @@ export default function App() {
 
               <div className="p-4 rounded-xl bg-stone-50 border border-stone-200">
                 <div className="text-xs font-mono font-bold text-amber-700 uppercase mb-1">Step 3</div>
-                <div className="font-semibold text-stone-900 text-sm">Synthesize & Download</div>
+                <div className="font-semibold text-stone-900 text-sm">MS Word Notes → Auto-PDF</div>
                 <p className="text-[11px] text-stone-500 mt-1">
-                  Generate master unit notes, ask deep questions, and download offline dossiers.
+                  Admin writes notes in MS Word Studio; saving auto-converts them to PDF for students.
                 </p>
               </div>
             </div>
@@ -526,6 +619,14 @@ export default function App() {
               </button>
 
               <button
+                onClick={() => setActiveTab('notes')}
+                className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-[#185abd] hover:bg-blue-700 text-white font-semibold text-sm transition-colors shadow-md"
+              >
+                <FileText className="w-4 h-4" />
+                <span>Open Notes (MS Word → Auto-PDF)</span>
+              </button>
+
+              <button
                 onClick={() => setIsBookManagerOpen(true)}
                 className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-800 font-semibold text-sm transition-colors border border-stone-200"
               >
@@ -537,23 +638,22 @@ export default function App() {
         )}
       </main>
 
-      {/* Footer */}
-      <footer className="mt-auto border-t border-stone-200 bg-white py-6 text-stone-500 text-xs">
-        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <BookOpen className="w-4 h-4 text-amber-600" />
-            <span className="font-semibold text-stone-700">Notes</span>
-            <span>• Reference Book & Syllabus Study Platform</span>
-          </div>
-          <div className="flex items-center gap-4 text-[11px] font-mono">
-            <span>Powered by Gemini 4 & 3.8 Intelligence</span>
-            <span>•</span>
-            <span>Firebase Firestore & Auth</span>
-            <span>•</span>
-            <span className="text-emerald-700 font-semibold">Offline Ready</span>
-          </div>
-        </div>
-      </footer>
+      {/* Mobile App Footer Navigation & Install App Tab */}
+      <MobileFooterNav
+        activeTab={activeTab}
+        onSelectTab={(tab) => setActiveTab(tab)}
+        unitsCount={currentUnits.length}
+        booksCount={currentBooks.length}
+        notesCount={currentWordNotes.length}
+        onQuickAddQuestion={
+          selectedCourse
+            ? () => {
+                setAddQuestionDefaultUnitId(selectedUnit?.id || currentUnits[0]?.id);
+                setIsAddQuestionOpen(true);
+              }
+            : undefined
+        }
+      />
 
       {/* Modals */}
       {isBookManagerOpen && (

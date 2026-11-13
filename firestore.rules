@@ -80,17 +80,20 @@ service cloud.firestore {
 
     function isValidQuestion(data) {
       return data.keys().hasAll(['courseId', 'question', 'answer', 'askedBy', 'createdAt']) &&
-        data.keys().hasOnly(['id', 'courseId', 'unitId', 'question', 'answer', 'answerFormat', 'isCurated', 'thinkingUsed', 'groundedInSearch', 'modelUsed', 'sourceBooks', 'askedBy', 'askedByName', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'courseId', 'unitId', 'question', 'answer', 'marks', 'section', 'answerFormat', 'isCurated', 'thinkingUsed', 'groundedInSearch', 'modelUsed', 'sourceBooks', 'webSources', 'askedBy', 'askedByName', 'createdAt', 'updatedAt']) &&
         data.courseId is string && data.courseId.size() <= 128 &&
         (!('unitId' in data) || (data.unitId is string && data.unitId.size() <= 128)) &&
         data.question is string && data.question.size() > 0 && data.question.size() <= 2000 &&
         data.answer is string && data.answer.size() > 0 && data.answer.size() <= 50000 &&
+        (!('marks' in data) || (data.marks is number)) &&
+        (!('section' in data) || (data.section is string && data.section.size() <= 50)) &&
         (!('answerFormat' in data) || (data.answerFormat is string && data.answerFormat.size() <= 100)) &&
         (!('isCurated' in data) || (data.isCurated is bool)) &&
         (!('thinkingUsed' in data) || (data.thinkingUsed is bool)) &&
         (!('groundedInSearch' in data) || (data.groundedInSearch is bool)) &&
-        (!('modelUsed' in data) || (data.modelUsed is string && data.modelUsed.size() <= 50)) &&
+        (!('modelUsed' in data) || (data.modelUsed is string && data.modelUsed.size() <= 100)) &&
         (!('sourceBooks' in data) || (data.sourceBooks is string && data.sourceBooks.size() <= 1000)) &&
+        (!('webSources' in data) || (data.webSources is list)) &&
         data.askedBy is string && data.askedBy.size() <= 128 &&
         (!('askedByName' in data) || (data.askedByName is string && data.askedByName.size() <= 100));
     }
@@ -100,6 +103,30 @@ service cloud.firestore {
         data.keys().hasOnly(['email', 'role', 'createdAt']) &&
         data.email is string && data.email.size() <= 150 &&
         data.role is string && data.role.size() <= 50;
+    }
+
+    function isValidWordNote(data) {
+      return data.keys().hasAll(['courseId', 'title', 'htmlContent', 'pdfDataUrl', 'createdBy', 'createdAt']) &&
+        data.keys().hasOnly(['id', 'courseId', 'unitId', 'title', 'subject', 'author', 'category', 'keywords', 'status', 'comments', 'htmlContent', 'plainText', 'pageSettingsJson', 'pdfDataUrl', 'pdfFileName', 'wordCount', 'charCount', 'pageCount', 'version', 'createdBy', 'createdAt', 'updatedAt']) &&
+        data.courseId is string && data.courseId.size() <= 128 &&
+        (!('unitId' in data) || (data.unitId is string && data.unitId.size() <= 128)) &&
+        data.title is string && data.title.size() > 0 && data.title.size() <= 200 &&
+        (!('subject' in data) || (data.subject is string && data.subject.size() <= 200)) &&
+        (!('author' in data) || (data.author is string && data.author.size() <= 150)) &&
+        (!('category' in data) || (data.category is string && data.category.size() <= 100)) &&
+        (!('keywords' in data) || (data.keywords is string && data.keywords.size() <= 500)) &&
+        (!('status' in data) || (data.status is string && data.status.size() <= 50)) &&
+        (!('comments' in data) || (data.comments is string && data.comments.size() <= 2000)) &&
+        data.htmlContent is string && data.htmlContent.size() <= 300000 &&
+        (!('plainText' in data) || (data.plainText is string && data.plainText.size() <= 200000)) &&
+        (!('pageSettingsJson' in data) || (data.pageSettingsJson is string && data.pageSettingsJson.size() <= 5000)) &&
+        data.pdfDataUrl is string && data.pdfDataUrl.size() <= 800000 &&
+        (!('pdfFileName' in data) || (data.pdfFileName is string && data.pdfFileName.size() <= 255)) &&
+        (!('wordCount' in data) || (data.wordCount is number)) &&
+        (!('charCount' in data) || (data.charCount is number)) &&
+        (!('pageCount' in data) || (data.pageCount is number)) &&
+        (!('version' in data) || (data.version is number)) &&
+        data.createdBy is string && data.createdBy.size() <= 128;
     }
 
     // Courses collection
@@ -140,6 +167,15 @@ service cloud.firestore {
         (incoming().askedBy == existing().askedBy || isAdmin()) &&
         incoming().courseId == existing().courseId;
       allow delete: if isSignedIn() && isValidId(questionId) && (isAdmin() || existing().askedBy == request.auth.uid);
+    }
+
+    // Word Notes collection (Admin writes & auto-converts to PDF; Users read PDF)
+    match /word_notes/{noteId} {
+      allow get, list: if true;
+      allow create: if isSignedIn() && isValidId(noteId) && (isAdmin() || incoming().createdBy == request.auth.uid) && isValidWordNote(incoming());
+      allow update: if isSignedIn() && isValidId(noteId) && (isAdmin() || existing().createdBy == request.auth.uid) && isValidWordNote(incoming()) &&
+        (incoming().createdBy == existing().createdBy || isAdmin());
+      allow delete: if isSignedIn() && isValidId(noteId) && (isAdmin() || existing().createdBy == request.auth.uid);
     }
 
     // Admins collection
