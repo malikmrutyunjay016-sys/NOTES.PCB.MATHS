@@ -50,7 +50,7 @@ export const BookManagerModal: React.FC<BookManagerModalProps> = ({
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [viewingBook, setViewingBook] = useState<BookType | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [confirmDeleteBook, setConfirmDeleteBook] = useState<BookType | null>(null);
 
   if (!isOpen) return null;
 
@@ -155,7 +155,8 @@ export const BookManagerModal: React.FC<BookManagerModalProps> = ({
       setDeletingId(bookId);
       setErrorMessage(null);
       await onDeleteBook(bookId);
-      setConfirmDeleteId(null);
+      setConfirmDeleteBook(null);
+      if (viewingBook?.id === bookId) setViewingBook(null);
     } catch (err: any) {
       console.error('Error deleting book:', err);
       setErrorMessage('Failed to delete book: ' + err.message);
@@ -424,31 +425,13 @@ export const BookManagerModal: React.FC<BookManagerModalProps> = ({
                           <Eye className="w-3.5 h-3.5" />
                           <span className="hidden sm:inline">View Content</span>
                         </button>
-                        {confirmDeleteId === b.id ? (
-                          <div className="flex items-center gap-1.5">
-                            <button
-                              onClick={() => handleDelete(b.id)}
-                              disabled={deletingId === b.id}
-                              className="px-2.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold shadow transition-colors"
-                            >
-                              {deletingId === b.id ? 'Deleting...' : 'Confirm'}
-                            </button>
-                            <button
-                              onClick={() => setConfirmDeleteId(null)}
-                              className="px-2 py-1.5 rounded-lg bg-stone-800 text-stone-300 text-xs hover:bg-stone-700 transition-colors"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            onClick={() => setConfirmDeleteId(b.id)}
-                            className="p-2 rounded-lg bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 border border-rose-900/50 text-xs font-medium transition-colors"
-                            title="Delete book"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        )}
+                        <button
+                          onClick={() => setConfirmDeleteBook(b)}
+                          className="p-2 rounded-lg bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 border border-rose-900/50 text-xs font-medium transition-colors"
+                          title="Delete book"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
                       </div>
                     </div>
                   );
@@ -492,6 +475,58 @@ export const BookManagerModal: React.FC<BookManagerModalProps> = ({
                 {viewingBook.content}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Admin Delete File Confirmation Modal */}
+      {confirmDeleteBook && (
+        <div
+          className="fixed inset-0 z-70 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4"
+          onClick={() => {
+            if (!deletingId) setConfirmDeleteBook(null);
+          }}
+        >
+          <div
+            className="bg-stone-900 border border-stone-700 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 text-stone-100"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-3">
+              <div className="p-2.5 rounded-xl bg-rose-500/15 text-rose-400 border border-rose-500/30 shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="text-base font-serif font-bold text-stone-100">
+                  Confirm Delete File
+                </h3>
+                <p className="text-xs text-stone-300 mt-1 leading-relaxed">
+                  Are you sure you want to permanently delete{' '}
+                  <span className="font-semibold text-white break-words">
+                    {confirmDeleteBook.fileName || confirmDeleteBook.title}
+                  </span>
+                  ? This action cannot be undone.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-stone-800">
+              <button
+                type="button"
+                disabled={Boolean(deletingId)}
+                onClick={() => setConfirmDeleteBook(null)}
+                className="px-4 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 border border-stone-700 text-xs font-semibold text-stone-200 transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={Boolean(deletingId)}
+                onClick={() => handleDelete(confirmDeleteBook.id)}
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold shadow transition-colors disabled:opacity-50"
+              >
+                {deletingId === confirmDeleteBook.id ? 'Deleting...' : 'Delete File'}
+              </button>
+            </div>
           </div>
         </div>
       )}

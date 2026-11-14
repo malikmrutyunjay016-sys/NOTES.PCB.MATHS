@@ -46,6 +46,8 @@ export const ReferenceLibraryView: React.FC<ReferenceLibraryViewProps> = ({
   const [selectedBook, setSelectedBook] = useState<BookType | null>(null);
   const [downloadingBookId, setDownloadingBookId] = useState<string | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
+  const [bookToDelete, setBookToDelete] = useState<BookType | null>(null);
+  const [isDeletingBook, setIsDeletingBook] = useState<boolean>(false);
 
   // Filter books by current course or search query
   const filteredBooks = books.filter((b) => {
@@ -216,7 +218,7 @@ export const ReferenceLibraryView: React.FC<ReferenceLibraryViewProps> = ({
 
                   {isAdmin && (
                     <button
-                      onClick={() => onDeleteBook(b.id)}
+                      onClick={() => setBookToDelete(b)}
                       className="p-1.5 rounded-lg text-rose-500 hover:bg-rose-50 transition-colors"
                       title="Delete reference book"
                     >
@@ -286,6 +288,69 @@ export const ReferenceLibraryView: React.FC<ReferenceLibraryViewProps> = ({
                 </div>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Admin Delete File Confirmation Modal */}
+      {isAdmin && bookToDelete && (
+        <div
+          className="fixed inset-0 z-50 bg-stone-950/70 backdrop-blur-xs flex items-center justify-center p-4"
+          onClick={() => {
+            if (!isDeletingBook) setBookToDelete(null);
+          }}
+        >
+          <div
+            className="bg-white rounded-2xl border border-stone-200 max-w-md w-full p-6 shadow-2xl space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-3">
+              <div className="p-2.5 rounded-xl bg-rose-50 text-rose-600 border border-rose-200 shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="text-base font-serif font-bold text-stone-900">
+                  Confirm Delete File
+                </h3>
+                <p className="text-xs text-stone-600 mt-1 leading-relaxed">
+                  Are you sure you want to permanently delete{' '}
+                  <span className="font-semibold text-stone-900 break-words">
+                    {bookToDelete.fileName || bookToDelete.title}
+                  </span>
+                  ? This action cannot be undone.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-stone-100">
+              <button
+                type="button"
+                disabled={isDeletingBook}
+                onClick={() => setBookToDelete(null)}
+                className="px-4 py-2 rounded-xl border border-stone-200 text-xs font-semibold text-stone-700 hover:bg-stone-100 transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isDeletingBook}
+                onClick={async () => {
+                  try {
+                    setIsDeletingBook(true);
+                    await onDeleteBook(bookToDelete.id);
+                    if (selectedBook?.id === bookToDelete.id) {
+                      setSelectedBook(null);
+                    }
+                    setBookToDelete(null);
+                  } finally {
+                    setIsDeletingBook(false);
+                  }
+                }}
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold shadow-sm transition-colors disabled:opacity-50"
+              >
+                {isDeletingBook ? 'Deleting...' : 'Delete File'}
+              </button>
+            </div>
           </div>
         </div>
       )}

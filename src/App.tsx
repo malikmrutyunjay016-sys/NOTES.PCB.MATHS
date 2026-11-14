@@ -190,10 +190,35 @@ export default function App() {
       '8M': 'Group D',
     };
     const targetSection = targetSectionMap[tab];
-    return currentQuestions.filter((q) => {
-      const sec = getSectionForMarks(q.marks);
-      return sec === targetSection || q.section === targetSection;
+    const unitTitleById = new Map<string, string>();
+    currentUnits.forEach((u) => {
+      unitTitleById.set(u.id, (u.title || '').trim());
     });
+
+    return currentQuestions
+      .filter((q) => {
+        const sec = getSectionForMarks(q.marks);
+        return sec === targetSection || q.section === targetSection;
+      })
+      .slice()
+      .sort((a, b) => {
+        const unitTitleA = a.unitId ? unitTitleById.get(a.unitId) || '' : '';
+        const unitTitleB = b.unitId ? unitTitleById.get(b.unitId) || '' : '';
+
+        if (unitTitleA && !unitTitleB) return -1;
+        if (!unitTitleA && unitTitleB) return 1;
+
+        const unitCmp = unitTitleA.localeCompare(unitTitleB, undefined, {
+          sensitivity: 'base',
+        });
+        if (unitCmp !== 0) return unitCmp;
+
+        const labelA = (a.pdfFileName || a.question || '').trim();
+        const labelB = (b.pdfFileName || b.question || '').trim();
+        return labelA.localeCompare(labelB, undefined, {
+          sensitivity: 'base',
+        });
+      });
   };
 
   const questions1M = getQuestionsByMarkTab('1M');
@@ -256,6 +281,7 @@ export default function App() {
   };
 
   const handleDeleteCourse = async (courseId: string) => {
+    if (!isAdmin) return;
     setCourses((prev) => prev.filter((c) => c.id !== courseId));
     setSelectedCourse((prev) => (prev?.id === courseId ? courses.find((c) => c.id !== courseId) || null : prev));
     if (currentUser) {
@@ -288,6 +314,7 @@ export default function App() {
   };
 
   const handleDeleteBook = async (bookId: string) => {
+    if (!isAdmin) return;
     setBooks((prev) => prev.filter((b) => b.id !== bookId));
     if (currentUser) {
       try {
@@ -319,6 +346,7 @@ export default function App() {
   };
 
   const handleDeleteQuestion = async (questionId: string) => {
+    if (!isAdmin) return;
     setQuestions((prev) => prev.filter((q) => q.id !== questionId));
     if (currentUser) {
       try {
@@ -351,6 +379,7 @@ export default function App() {
   };
 
   const handleDeleteWordNote = async (noteId: string) => {
+    if (!isAdmin) return;
     setWordNotes((prev) => prev.filter((n) => n.id !== noteId));
     if (currentUser) {
       try {
@@ -620,7 +649,14 @@ export default function App() {
                   setIsCourseEditorOpen(true);
                 }}
                 onSaveQuestion={handleSaveQuestion}
-                onDeleteQuestion={handleDeleteQuestion}
+                onDeleteQuestion={
+                  isAdmin
+                    ? async (questionId) => {
+                        const found = questions.find((item) => item.id === questionId);
+                        if (found) setQuestionToDelete(found);
+                      }
+                    : undefined
+                }
                 userId={currentUser?.uid || 'guest-admin'}
                 userName={currentUser?.displayName || (currentUser?.email ? currentUser.email.split('@')[0] : 'Course Admin')}
               />
@@ -877,13 +913,15 @@ export default function App() {
                 <span>Open Notes (MS Word → Auto-PDF)</span>
               </button>
 
-              <button
-                onClick={() => setIsBookManagerOpen(true)}
-                className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-800 font-semibold text-sm transition-colors border border-stone-200"
-              >
-                <BookMarked className="w-4 h-4 text-amber-600" />
-                <span>Open Reference Library</span>
-              </button>
+              {isAdmin && (
+                <button
+                  onClick={() => setIsBookManagerOpen(true)}
+                  className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-800 font-semibold text-sm transition-colors border border-stone-200"
+                >
+                  <BookMarked className="w-4 h-4 text-amber-600" />
+                  <span>Open Reference Library</span>
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -897,7 +935,7 @@ export default function App() {
         booksCount={currentBooks.length}
         notesCount={currentWordNotes.length}
         onQuickAddQuestion={
-          selectedCourse
+          selectedCourse && isAdmin
             ? () => {
                 setAddQuestionDefaultUnitId(selectedUnit?.id || currentUnits[0]?.id);
                 setIsAddQuestionOpen(true);
@@ -907,7 +945,7 @@ export default function App() {
       />
 
       {/* Modals */}
-      {isBookManagerOpen && (
+      {isAdmin && isBookManagerOpen && (
         <BookManagerModal
           isOpen={isBookManagerOpen}
           onClose={() => setIsBookManagerOpen(false)}
