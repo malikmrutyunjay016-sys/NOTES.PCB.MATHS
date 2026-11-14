@@ -19,7 +19,7 @@ service cloud.firestore {
 
     function isAdmin() {
       return isSignedIn() && (
-        request.auth.token.email == 'malikmrutyunjay016@gmail.com' ||
+        (request.auth.token.email == 'malikmrutyunjay016@gmail.com' && request.auth.token.email_verified == true) ||
         exists(/databases/$(database)/documents/admins/$(request.auth.uid))
       );
     }
@@ -64,7 +64,7 @@ service cloud.firestore {
 
     function isValidBook(data) {
       return data.keys().hasAll(['courseId', 'title', 'content', 'createdBy', 'createdAt']) &&
-        data.keys().hasOnly(['id', 'courseId', 'title', 'author', 'edition', 'fileName', 'fileSize', 'content', 'fileData', 'mimeType', 'excerpt', 'createdBy', 'createdAt']) &&
+        data.keys().hasOnly(['id', 'courseId', 'title', 'author', 'edition', 'fileName', 'fileSize', 'content', 'fileData', 'fileChunkCount', 'mimeType', 'excerpt', 'createdBy', 'createdAt']) &&
         data.courseId is string && data.courseId.size() <= 128 &&
         data.title is string && data.title.size() > 0 && data.title.size() <= 200 &&
         (!('author' in data) || (data.author is string && data.author.size() <= 200)) &&
@@ -72,7 +72,8 @@ service cloud.firestore {
         (!('fileName' in data) || (data.fileName is string && data.fileName.size() <= 255)) &&
         (!('fileSize' in data) || (data.fileSize is number)) &&
         data.content is string && data.content.size() > 0 && data.content.size() <= 1000000 &&
-        (!('fileData' in data) || (data.fileData is string && data.fileData.size() <= 2000000)) &&
+        (!('fileData' in data) || (data.fileData is string && data.fileData.size() <= 800000)) &&
+        (!('fileChunkCount' in data) || (data.fileChunkCount is int && data.fileChunkCount >= 0)) &&
         (!('mimeType' in data) || (data.mimeType is string && data.mimeType.size() <= 100)) &&
         (!('excerpt' in data) || (data.excerpt is string && data.excerpt.size() <= 5000)) &&
         data.createdBy is string && data.createdBy.size() <= 128;
@@ -80,7 +81,7 @@ service cloud.firestore {
 
     function isValidQuestion(data) {
       return data.keys().hasAll(['courseId', 'question', 'answer', 'askedBy', 'createdAt']) &&
-        data.keys().hasOnly(['id', 'courseId', 'unitId', 'question', 'answer', 'marks', 'section', 'answerFormat', 'isCurated', 'thinkingUsed', 'groundedInSearch', 'modelUsed', 'sourceBooks', 'webSources', 'pdfDataUrl', 'pdfFileName', 'mimeType', 'askedBy', 'askedByName', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'courseId', 'unitId', 'question', 'answer', 'marks', 'section', 'answerFormat', 'isCurated', 'thinkingUsed', 'groundedInSearch', 'modelUsed', 'sourceBooks', 'webSources', 'pdfDataUrl', 'pdfChunkCount', 'pdfFileName', 'mimeType', 'askedBy', 'askedByName', 'createdAt', 'updatedAt']) &&
         data.courseId is string && data.courseId.size() <= 128 &&
         (!('unitId' in data) || (data.unitId is string && data.unitId.size() <= 128)) &&
         data.question is string && data.question.size() > 0 && data.question.size() <= 2000 &&
@@ -95,6 +96,7 @@ service cloud.firestore {
         (!('sourceBooks' in data) || (data.sourceBooks is string && data.sourceBooks.size() <= 1000)) &&
         (!('webSources' in data) || (data.webSources is list)) &&
         (!('pdfDataUrl' in data) || (data.pdfDataUrl is string && data.pdfDataUrl.size() <= 800000)) &&
+        (!('pdfChunkCount' in data) || (data.pdfChunkCount is int && data.pdfChunkCount >= 0)) &&
         (!('pdfFileName' in data) || (data.pdfFileName is string && data.pdfFileName.size() <= 255)) &&
         (!('mimeType' in data) || (data.mimeType is string && data.mimeType.size() <= 100)) &&
         data.askedBy is string && data.askedBy.size() <= 128 &&
@@ -110,7 +112,7 @@ service cloud.firestore {
 
     function isValidWordNote(data) {
       return data.keys().hasAll(['courseId', 'title', 'htmlContent', 'pdfDataUrl', 'createdBy', 'createdAt']) &&
-        data.keys().hasOnly(['id', 'courseId', 'unitId', 'title', 'subject', 'author', 'category', 'keywords', 'status', 'comments', 'htmlContent', 'plainText', 'pageSettingsJson', 'pdfDataUrl', 'pdfFileName', 'wordCount', 'charCount', 'pageCount', 'version', 'createdBy', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'courseId', 'unitId', 'title', 'subject', 'author', 'category', 'keywords', 'status', 'comments', 'htmlContent', 'plainText', 'pageSettingsJson', 'pdfDataUrl', 'pdfChunkCount', 'pdfFileName', 'wordCount', 'charCount', 'pageCount', 'version', 'createdBy', 'createdAt', 'updatedAt']) &&
         data.courseId is string && data.courseId.size() <= 128 &&
         (!('unitId' in data) || (data.unitId is string && data.unitId.size() <= 128)) &&
         data.title is string && data.title.size() > 0 && data.title.size() <= 200 &&
@@ -124,11 +126,20 @@ service cloud.firestore {
         (!('plainText' in data) || (data.plainText is string && data.plainText.size() <= 200000)) &&
         (!('pageSettingsJson' in data) || (data.pageSettingsJson is string && data.pageSettingsJson.size() <= 5000)) &&
         data.pdfDataUrl is string && data.pdfDataUrl.size() <= 800000 &&
+        (!('pdfChunkCount' in data) || (data.pdfChunkCount is int && data.pdfChunkCount >= 0)) &&
         (!('pdfFileName' in data) || (data.pdfFileName is string && data.pdfFileName.size() <= 255)) &&
         (!('wordCount' in data) || (data.wordCount is number)) &&
         (!('charCount' in data) || (data.charCount is number)) &&
         (!('pageCount' in data) || (data.pageCount is number)) &&
         (!('version' in data) || (data.version is number)) &&
+        data.createdBy is string && data.createdBy.size() <= 128;
+    }
+
+    function isValidPdfChunk(data) {
+      return data.keys().hasAll(['index', 'data', 'createdBy']) &&
+        data.keys().hasOnly(['index', 'data', 'createdBy']) &&
+        data.index is int && data.index >= 0 &&
+        data.data is string && data.data.size() > 0 && data.data.size() <= 750000 &&
         data.createdBy is string && data.createdBy.size() <= 128;
     }
 
@@ -159,17 +170,31 @@ service cloud.firestore {
         (incoming().createdBy == existing().createdBy || isAdmin()) &&
         incoming().courseId == existing().courseId;
       allow delete: if isSignedIn() && isValidId(bookId) && (isAdmin() || existing().createdBy == request.auth.uid);
+
+      match /chunks/{chunkId} {
+        allow get, list: if true;
+        allow create: if isSignedIn() && isValidId(bookId) && isValidId(chunkId) && (isAdmin() || incoming().createdBy == request.auth.uid) && isValidPdfChunk(incoming());
+        allow update: if isSignedIn() && isValidId(bookId) && isValidId(chunkId) && (isAdmin() || existing().createdBy == request.auth.uid) && isValidPdfChunk(incoming());
+        allow delete: if isSignedIn() && isValidId(bookId) && isValidId(chunkId) && (isAdmin() || existing().createdBy == request.auth.uid);
+      }
     }
 
     // Questions collection
     match /questions/{questionId} {
       allow get, list: if true;
-      allow create: if isSignedIn() && isValidId(questionId) && isValidQuestion(incoming());
+      allow create: if isSignedIn() && isValidId(questionId) && (isAdmin() || incoming().askedBy == request.auth.uid) && isValidQuestion(incoming());
       allow update: if isSignedIn() && isValidId(questionId) && isValidQuestion(incoming()) &&
         (isAdmin() || existing().askedBy == request.auth.uid) &&
         (incoming().askedBy == existing().askedBy || isAdmin()) &&
         incoming().courseId == existing().courseId;
       allow delete: if isSignedIn() && isValidId(questionId) && (isAdmin() || existing().askedBy == request.auth.uid);
+
+      match /chunks/{chunkId} {
+        allow get, list: if true;
+        allow create: if isSignedIn() && isValidId(questionId) && isValidId(chunkId) && (isAdmin() || incoming().createdBy == request.auth.uid) && isValidPdfChunk(incoming());
+        allow update: if isSignedIn() && isValidId(questionId) && isValidId(chunkId) && (isAdmin() || existing().createdBy == request.auth.uid) && isValidPdfChunk(incoming());
+        allow delete: if isSignedIn() && isValidId(questionId) && isValidId(chunkId) && (isAdmin() || existing().createdBy == request.auth.uid);
+      }
     }
 
     // Word Notes collection (Admin writes & auto-converts to PDF; Users read PDF)
@@ -179,6 +204,13 @@ service cloud.firestore {
       allow update: if isSignedIn() && isValidId(noteId) && (isAdmin() || existing().createdBy == request.auth.uid) && isValidWordNote(incoming()) &&
         (incoming().createdBy == existing().createdBy || isAdmin());
       allow delete: if isSignedIn() && isValidId(noteId) && (isAdmin() || existing().createdBy == request.auth.uid);
+
+      match /chunks/{chunkId} {
+        allow get, list: if true;
+        allow create: if isSignedIn() && isValidId(noteId) && isValidId(chunkId) && (isAdmin() || incoming().createdBy == request.auth.uid) && isValidPdfChunk(incoming());
+        allow update: if isSignedIn() && isValidId(noteId) && isValidId(chunkId) && (isAdmin() || existing().createdBy == request.auth.uid) && isValidPdfChunk(incoming());
+        allow delete: if isSignedIn() && isValidId(noteId) && isValidId(chunkId) && (isAdmin() || existing().createdBy == request.auth.uid);
+      }
     }
 
     // Admins collection

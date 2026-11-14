@@ -48,10 +48,11 @@ import { CourseEditorModal } from './components/CourseEditorModal';
 import { AddQuestionModal } from './components/AddQuestionModal';
 import { MobileFooterNav } from './components/MobileFooterNav';
 import { MarkdownView } from './components/MarkdownView';
+import { PdfViewer } from './components/PdfViewer';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [demoAdmin, setDemoAdmin] = useState<boolean>(true);
+  const [studentPreview, setStudentPreview] = useState<boolean>(false);
 
   // App Data State (Initialized empty — no default courses, units, books, or questions)
   const [courses, setCourses] = useState<Course[]>([]);
@@ -75,14 +76,17 @@ export default function App() {
   const [addQuestionDefaultUnitId, setAddQuestionDefaultUnitId] = useState<string | undefined>(undefined);
   const [addQuestionDefaultMarks, setAddQuestionDefaultMarks] = useState<number | undefined>(undefined);
   const [expandedMarksQuestions, setExpandedMarksQuestions] = useState<Record<string, boolean>>({});
+  const [questionToDelete, setQuestionToDelete] = useState<Question | null>(null);
+  const [isDeletingQuestion, setIsDeletingQuestion] = useState<boolean>(false);
 
   // Notification for guest mode
   const [showGuestBanner, setShowGuestBanner] = useState<boolean>(true);
 
-  // Determine admin privileges
-  const isAdmin = Boolean(
-    demoAdmin || (currentUser && currentUser.email === ADMIN_EMAIL)
+  // Determine admin privileges strictly from verified admin account
+  const isVerifiedAdmin = Boolean(
+    currentUser && currentUser.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase()
   );
+  const isAdmin = isVerifiedAdmin && !studentPreview;
 
   // Auth Listener
   useEffect(() => {
@@ -90,9 +94,11 @@ export default function App() {
       setCurrentUser(user);
       if (user) {
         setShowGuestBanner(false);
-        if (user.email === ADMIN_EMAIL) {
-          setDemoAdmin(true);
+        if (user.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase()) {
+          setStudentPreview(false);
         }
+      } else {
+        setStudentPreview(false);
       }
     });
     return () => unsubscribe();
@@ -396,7 +402,12 @@ export default function App() {
         }}
         currentUser={currentUser}
         isAdmin={isAdmin}
-        onToggleDemoAdmin={() => setDemoAdmin(!demoAdmin)}
+        canToggleAdmin={isVerifiedAdmin}
+        onToggleDemoAdmin={() => {
+          if (isVerifiedAdmin) {
+            setStudentPreview((prev) => !prev);
+          }
+        }}
         onOpenNewCourse={() => {
           setCourseToEdit(null);
           setIsCourseEditorOpen(true);
@@ -724,16 +735,17 @@ export default function App() {
                                     tabIndex={0}
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      handleDeleteQuestion(q.id);
+                                      setQuestionToDelete(q);
                                     }}
                                     onKeyDown={(e) => {
                                       if (e.key === 'Enter' || e.key === ' ') {
+                                        e.preventDefault();
                                         e.stopPropagation();
-                                        handleDeleteQuestion(q.id);
+                                        setQuestionToDelete(q);
                                       }
                                     }}
                                     className="p-1.5 rounded-lg text-stone-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
-                                    title="Delete Question"
+                                    title={q.pdfDataUrl ? 'Delete PDF' : 'Delete Question'}
                                   >
                                     <Trash2 className="w-3.5 h-3.5" />
                                   </span>
@@ -747,29 +759,12 @@ export default function App() {
                             {isExpanded && (
                               <div className="p-5 pt-0 border-t border-stone-200/80 bg-white space-y-4">
                                 {q.pdfDataUrl ? (
-                                  <div className="space-y-3 pt-3">
-                                    <div className="flex items-center justify-between bg-stone-900 text-stone-100 p-3 rounded-xl">
-                                      <div className="flex items-center gap-2 text-xs font-mono">
-                                        <FileText className="w-4 h-4 text-amber-400" />
-                                        <span>{q.pdfFileName || 'Question_Paper.pdf'}</span>
-                                      </div>
-                                      <a
-                                        href={q.pdfDataUrl}
-                                        download={q.pdfFileName || 'Question_Paper.pdf'}
-                                        className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold flex items-center gap-1.5 shadow"
-                                      >
-                                        <Download className="w-3.5 h-3.5" />
-                                        <span>Download PDF</span>
-                                      </a>
-                                    </div>
-                                    <div className="w-full h-[550px] bg-stone-950 rounded-xl border border-stone-800 overflow-hidden shadow-inner">
-                                      <iframe
-                                        src={q.pdfDataUrl}
-                                        title={q.pdfFileName || 'PDF Viewer'}
-                                        className="w-full h-full border-0"
-                                      />
-                                    </div>
-                                  </div>
+                                  <PdfViewer
+                                    collectionName="questions"
+                                    docId={q.id}
+                                    inlineDataUrl={q.pdfDataUrl}
+                                    fileName={q.pdfFileName}
+                                  />
                                 ) : (
                                   <>
                                     <div className="text-xs text-stone-500 font-mono uppercase mb-2 mt-3">Model Answer:</div>
@@ -948,6 +943,65 @@ export default function App() {
           userId={currentUser?.uid || 'guest-admin'}
           userName={currentUser?.displayName || (currentUser?.email ? currentUser.email.split('@')[0] : 'Course Admin')}
         />
+      )}
+
+      {isAdmin && questionToDelete && (
+        <div
+          className="fixed inset-0 z-50 bg-stone-950/70 backdrop-blur-xs flex items-center justify-center p-4"
+          onClick={() => {
+            if (!isDeletingQuestion) setQuestionToDelete(null);
+          }}
+        >
+          <div
+            className="bg-white rounded-2xl border border-stone-200 max-w-md w-full p-6 shadow-2xl space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-3">
+              <div className="p-2.5 rounded-xl bg-rose-50 text-rose-600 border border-rose-200 shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="text-base font-serif font-bold text-stone-900">
+                  Confirm Delete PDF
+                </h3>
+                <p className="text-xs text-stone-600 mt-1 leading-relaxed">
+                  Are you sure you want to permanently delete{' '}
+                  <span className="font-semibold text-stone-900 break-words">
+                    {questionToDelete.pdfFileName || questionToDelete.question}
+                  </span>
+                  ? This action cannot be undone.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-stone-100">
+              <button
+                type="button"
+                disabled={isDeletingQuestion}
+                onClick={() => setQuestionToDelete(null)}
+                className="px-4 py-2 rounded-xl border border-stone-200 text-xs font-semibold text-stone-700 hover:bg-stone-100 transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isDeletingQuestion}
+                onClick={async () => {
+                  try {
+                    setIsDeletingQuestion(true);
+                    await handleDeleteQuestion(questionToDelete.id);
+                    setQuestionToDelete(null);
+                  } finally {
+                    setIsDeletingQuestion(false);
+                  }
+                }}
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold shadow-sm transition-colors disabled:opacity-50"
+              >
+                {isDeletingQuestion ? 'Deleting...' : 'Delete PDF'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

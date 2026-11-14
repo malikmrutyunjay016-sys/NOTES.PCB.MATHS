@@ -3,16 +3,100 @@ import {
   doc,
   setDoc,
   deleteDoc,
-  updateDoc,
   onSnapshot,
   query,
   getDocs,
-  where,
+  writeBatch,
 } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from './firebase';
+import { auth, db, handleFirestoreError, OperationType } from './firebase';
 import { Course, Unit, Book, Question, WordNoteDocument } from '../types';
+import { CHUNKED_PDF_MARKER } from './pdfUtils';
 
 export const ADMIN_EMAIL = 'malikmrutyunjay016@gmail.com';
+
+const INLINE_DATA_URL_LIMIT = 550000;
+const CHUNK_CHAR_SIZE = 550000;
+const resolvedPdfCache = new Map<string, string>();
+
+async function saveChunkedData(
+  parentCollection: 'books' | 'questions' | 'word_notes',
+  docId: string,
+  dataUrl: string,
+  ownerId: string
+): Promise<number> {
+  const chunksCol = collection(db, parentCollection, docId, 'chunks');
+  // Delete any old chunks first
+  const existingSnap = await getDocs(chunksCol);
+  if (!existingSnap.empty) {
+    const delBatch = writeBatch(db);
+    existingSnap.forEach((d) => delBatch.delete(d.ref));
+    await delBatch.commit();
+  }
+
+  const totalChunks = Math.ceil(dataUrl.length / CHUNK_CHAR_SIZE);
+  // Firestore batch max is 500 writes; write sequentially in batches of 20
+  for (let i = 0; i < totalChunks; i++) {
+    const chunkStr = dataUrl.slice(i * CHUNK_CHAR_SIZE, (i + 1) * CHUNK_CHAR_SIZE);
+    const chunkRef = doc(db, parentCollection, docId, 'chunks', `chunk_${String(i).padStart(4, '0')}`);
+    await setDoc(chunkRef, {
+      index: i,
+      data: chunkStr,
+      createdBy: ownerId,
+    });
+  }
+
+  resolvedPdfCache.set(`${parentCollection}/${docId}`, dataUrl);
+  return totalChunks;
+}
+
+async function deleteChunks(
+  parentCollection: 'books' | 'questions' | 'word_notes',
+  docId: string
+): Promise<void> {
+  try {
+    resolvedPdfCache.delete(`${parentCollection}/${docId}`);
+    const chunksCol = collection(db, parentCollection, docId, 'chunks');
+    const snap = await getDocs(chunksCol);
+    if (!snap.empty) {
+      const batch = writeBatch(db);
+      snap.forEach((d) => batch.delete(d.ref));
+      await batch.commit();
+    }
+  } catch {
+    // Non-fatal if no chunks exist
+  }
+}
+
+export async function resolvePdfDataUrl(
+  parentCollection: 'books' | 'questions' | 'word_notes',
+  docId: string,
+  inlineDataUrl?: string
+): Promise<string> {
+  if (!inlineDataUrl) return '';
+  if (inlineDataUrl !== CHUNKED_PDF_MARKER) {
+    return inlineDataUrl;
+  }
+
+  const cacheKey = `${parentCollection}/${docId}`;
+  const cached = resolvedPdfCache.get(cacheKey);
+  if (cached) return cached;
+
+  const chunksCol = collection(db, parentCollection, docId, 'chunks');
+  const snap = await getDocs(chunksCol);
+  const items: Array<{ index: number; data: string }> = [];
+  snap.forEach((d) => {
+    const data = d.data() as { index?: number; data?: string };
+    if (typeof data.data === 'string') {
+      items.push({ index: typeof data.index === 'number' ? data.index : 0, data: data.data });
+    }
+  });
+  items.sort((a, b) => a.index - b.index);
+  const fullDataUrl = items.map((c) => c.data).join('');
+  if (fullDataUrl) {
+    resolvedPdfCache.set(cacheKey, fullDataUrl);
+  }
+  return fullDataUrl;
+}
 
 // ----------------- COURSES -----------------
 
@@ -162,6 +246,7 @@ export function subscribeBooks(
 export async function createBook(book: Book): Promise<void> {
   const path = `books/${book.id}`;
   try {
+    const ownerUid = auth.currentUser?.uid || book.createdBy;
     const payload: any = {
       courseId: book.courseId,
       title: book.title.slice(0, 200),
@@ -172,12 +257,17 @@ export async function createBook(book: Book): Promise<void> {
       content: (book.content || '').slice(0, 200000),
       excerpt: (book.excerpt || '').slice(0, 5000),
       mimeType: (book.mimeType || '').slice(0, 100),
-      createdBy: book.createdBy,
+      createdBy: ownerUid,
       createdAt: book.createdAt || new Date().toISOString(),
     };
     if (book.fileData) {
-      // Store file data up to safe Firestore document limit (~700KB)
-      payload.fileData = book.fileData.slice(0, 750000);
+      if (book.fileData.length <= INLINE_DATA_URL_LIMIT) {
+        payload.fileData = book.fileData;
+      } else {
+        const chunkCount = await saveChunkedData('books', book.id, book.fileData, ownerUid);
+        payload.fileData = CHUNKED_PDF_MARKER;
+        payload.fileChunkCount = chunkCount;
+      }
     }
     await setDoc(doc(db, 'books', book.id), payload);
   } catch (error) {
@@ -188,6 +278,7 @@ export async function createBook(book: Book): Promise<void> {
 export async function deleteBook(bookId: string): Promise<void> {
   const path = `books/${bookId}`;
   try {
+    await deleteChunks('books', bookId);
     await deleteDoc(doc(db, 'books', bookId));
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
@@ -226,6 +317,7 @@ export function subscribeQuestions(
 export async function createQuestion(q: Question): Promise<void> {
   const path = `questions/${q.id}`;
   try {
+    const ownerUid = auth.currentUser?.uid || q.askedBy;
     const payload: any = {
       courseId: q.courseId,
       unitId: q.unitId || '',
@@ -239,7 +331,7 @@ export async function createQuestion(q: Question): Promise<void> {
       groundedInSearch: Boolean(q.groundedInSearch),
       modelUsed: (q.modelUsed || 'gemini-3.8-flash').slice(0, 100),
       sourceBooks: (q.sourceBooks || '').slice(0, 1000),
-      askedBy: q.askedBy,
+      askedBy: ownerUid,
       askedByName: (q.askedByName || 'Anonymous Student').slice(0, 100),
       createdAt: q.createdAt || new Date().toISOString(),
     };
@@ -247,7 +339,13 @@ export async function createQuestion(q: Question): Promise<void> {
       payload.webSources = q.webSources.slice(0, 8);
     }
     if (q.pdfDataUrl) {
-      payload.pdfDataUrl = q.pdfDataUrl.slice(0, 750000);
+      if (q.pdfDataUrl.length <= INLINE_DATA_URL_LIMIT) {
+        payload.pdfDataUrl = q.pdfDataUrl;
+      } else {
+        const chunkCount = await saveChunkedData('questions', q.id, q.pdfDataUrl, ownerUid);
+        payload.pdfDataUrl = CHUNKED_PDF_MARKER;
+        payload.pdfChunkCount = chunkCount;
+      }
     }
     if (q.pdfFileName) {
       payload.pdfFileName = q.pdfFileName.slice(0, 255);
@@ -264,6 +362,7 @@ export async function createQuestion(q: Question): Promise<void> {
 export async function deleteQuestion(questionId: string): Promise<void> {
   const path = `questions/${questionId}`;
   try {
+    await deleteChunks('questions', questionId);
     await deleteDoc(doc(db, 'questions', questionId));
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
@@ -302,7 +401,15 @@ export function subscribeWordNotes(
 export async function saveWordNote(note: WordNoteDocument): Promise<void> {
   const path = `word_notes/${note.id}`;
   try {
-    const payload = {
+    const ownerUid = auth.currentUser?.uid || note.createdBy;
+    let storedPdfDataUrl = note.pdfDataUrl || '';
+    let pdfChunkCount: number | undefined;
+    if (storedPdfDataUrl.length > INLINE_DATA_URL_LIMIT) {
+      pdfChunkCount = await saveChunkedData('word_notes', note.id, storedPdfDataUrl, ownerUid);
+      storedPdfDataUrl = CHUNKED_PDF_MARKER;
+    }
+
+    const payload: any = {
       courseId: note.courseId.slice(0, 128),
       unitId: (note.unitId || '').slice(0, 128),
       title: note.title.slice(0, 200),
@@ -315,16 +422,19 @@ export async function saveWordNote(note: WordNoteDocument): Promise<void> {
       htmlContent: note.htmlContent.slice(0, 300000),
       plainText: (note.plainText || '').slice(0, 200000),
       pageSettingsJson: (note.pageSettingsJson || '{}').slice(0, 5000),
-      pdfDataUrl: note.pdfDataUrl.slice(0, 750000),
+      pdfDataUrl: storedPdfDataUrl,
       pdfFileName: (note.pdfFileName || 'Notes.pdf').slice(0, 255),
       wordCount: Number(note.wordCount) || 0,
       charCount: Number(note.charCount) || 0,
       pageCount: Number(note.pageCount) || 1,
       version: Number(note.version) || 1,
-      createdBy: note.createdBy.slice(0, 128),
+      createdBy: ownerUid.slice(0, 128),
       createdAt: note.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
+    if (typeof pdfChunkCount === 'number') {
+      payload.pdfChunkCount = pdfChunkCount;
+    }
     await setDoc(doc(db, 'word_notes', note.id), payload, { merge: true });
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
@@ -334,6 +444,7 @@ export async function saveWordNote(note: WordNoteDocument): Promise<void> {
 export async function deleteWordNote(noteId: string): Promise<void> {
   const path = `word_notes/${noteId}`;
   try {
+    await deleteChunks('word_notes', noteId);
     await deleteDoc(doc(db, 'word_notes', noteId));
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);

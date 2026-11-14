@@ -50,6 +50,9 @@
         "fileName": { "type": "string", "maxLength": 255 },
         "fileSize": { "type": "integer" },
         "content": { "type": "string", "maxLength": 200000 },
+        "fileData": { "type": "string", "maxLength": 750000 },
+        "fileChunkCount": { "type": "integer" },
+        "mimeType": { "type": "string", "maxLength": 100 },
         "excerpt": { "type": "string", "maxLength": 5000 },
         "createdBy": { "type": "string", "maxLength": 128 },
         "createdAt": { "type": "string", "format": "date-time" }
@@ -75,6 +78,10 @@
         "modelUsed": { "type": "string", "maxLength": 100 },
         "sourceBooks": { "type": "string", "maxLength": 1000 },
         "webSources": { "type": "array" },
+        "pdfDataUrl": { "type": "string", "maxLength": 750000 },
+        "pdfChunkCount": { "type": "integer" },
+        "pdfFileName": { "type": "string", "maxLength": 255 },
+        "mimeType": { "type": "string", "maxLength": 100 },
         "askedBy": { "type": "string", "maxLength": 128 },
         "askedByName": { "type": "string", "maxLength": 100 },
         "createdAt": { "type": "string", "format": "date-time" }
@@ -111,6 +118,7 @@
         "plainText": { "type": "string", "maxLength": 200000 },
         "pageSettingsJson": { "type": "string", "maxLength": 5000 },
         "pdfDataUrl": { "type": "string", "maxLength": 800000 },
+        "pdfChunkCount": { "type": "integer" },
         "pdfFileName": { "type": "string", "maxLength": 255 },
         "wordCount": { "type": "number" },
         "charCount": { "type": "number" },
@@ -121,6 +129,17 @@
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["courseId", "title", "htmlContent", "pdfDataUrl", "createdBy", "createdAt"]
+    },
+    "PdfChunk": {
+      "title": "PdfChunk",
+      "description": "Ordered base64 data-URL chunk for large PDF attachments",
+      "type": "object",
+      "properties": {
+        "index": { "type": "integer" },
+        "data": { "type": "string", "maxLength": 750000 },
+        "createdBy": { "type": "string", "maxLength": 128 }
+      },
+      "required": ["index", "data", "createdBy"]
     }
   },
   "firestore": {
@@ -136,9 +155,17 @@
       "schema": { "$ref": "Book" },
       "description": "Reference books uploaded to the system"
     },
+    "/books/{bookId}/chunks/{chunkId}": {
+      "schema": { "$ref": "PdfChunk" },
+      "description": "Ordered binary data-URL chunks for large reference book PDFs"
+    },
     "/questions/{questionId}": {
       "schema": { "$ref": "Question" },
       "description": "Questions and reference-based answers"
+    },
+    "/questions/{questionId}/chunks/{chunkId}": {
+      "schema": { "$ref": "PdfChunk" },
+      "description": "Ordered binary data-URL chunks for large question PDFs"
     },
     "/admins/{adminId}": {
       "schema": { "$ref": "Admin" },
@@ -147,6 +174,10 @@
     "/word_notes/{noteId}": {
       "schema": { "$ref": "WordNote" },
       "description": "Admin Word documents auto-converted to PDF for student reading"
+    },
+    "/word_notes/{noteId}/chunks/{chunkId}": {
+      "schema": { "$ref": "PdfChunk" },
+      "description": "Ordered binary data-URL chunks for large WordNote PDFs"
     }
   }
 }

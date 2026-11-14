@@ -5,13 +5,15 @@ import {
   Search,
   Download,
   Trash2,
-  FileText,
   Plus,
   Eye,
   X,
-  Layers,
+  AlertTriangle,
 } from 'lucide-react';
 import { Book as BookType, Course } from '../types';
+import { resolvePdfDataUrl } from '../lib/dataService';
+import { downloadDataUrlFile } from '../lib/pdfUtils';
+import { PdfViewer } from './PdfViewer';
 
 function downloadFile(filename: string, content: string, mimeType: string = 'text/plain') {
   const blob = new Blob([content], { type: `${mimeType};charset=utf-8` });
@@ -22,16 +24,7 @@ function downloadFile(filename: string, content: string, mimeType: string = 'tex
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
-  URL.revokeObjectURL(url);
-}
-
-function downloadDataUrl(filename: string, dataUrl: string) {
-  const link = document.createElement('a');
-  link.href = dataUrl;
-  link.setAttribute('download', filename);
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
 
 interface ReferenceLibraryViewProps {
@@ -51,6 +44,8 @@ export const ReferenceLibraryView: React.FC<ReferenceLibraryViewProps> = ({
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedBook, setSelectedBook] = useState<BookType | null>(null);
+  const [downloadingBookId, setDownloadingBookId] = useState<string | null>(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
 
   // Filter books by current course or search query
   const filteredBooks = books.filter((b) => {
@@ -61,6 +56,37 @@ export const ReferenceLibraryView: React.FC<ReferenceLibraryViewProps> = ({
       (b.excerpt || '').toLowerCase().includes(searchQuery.toLowerCase());
     return matchesCourse && matchesSearch;
   });
+
+  const handleBookDownload = async (b: BookType) => {
+    setDownloadError(null);
+    if (!b.fileData) {
+      downloadFile(`${b.title.replace(/\s+/g, '_')}.txt`, b.content, 'text/plain');
+      return;
+    }
+
+    try {
+      setDownloadingBookId(b.id);
+      const fullDataUrl = await resolvePdfDataUrl('books', b.id, b.fileData);
+      if (!fullDataUrl) {
+        setDownloadError(`Unable to load file data for "${b.title}". Please delete and re-upload it.`);
+        return;
+      }
+      const fname = b.fileName || `${b.title.replace(/\s+/g, '_')}.pdf`;
+      const result = downloadDataUrlFile(fname, fullDataUrl, b.mimeType || 'application/pdf');
+      if (!result.ok) {
+        setDownloadError(result.error || `Failed to download "${b.title}".`);
+      }
+    } finally {
+      setDownloadingBookId(null);
+    }
+  };
+
+  const isPdfBook = (b: BookType) =>
+    Boolean(
+      b.fileData &&
+        (b.mimeType?.toLowerCase().includes('pdf') ||
+          (b.fileName || '').toLowerCase().endsWith('.pdf'))
+    );
 
   return (
     <div className="space-y-6">
@@ -104,6 +130,22 @@ export const ReferenceLibraryView: React.FC<ReferenceLibraryViewProps> = ({
           )}
         </div>
       </div>
+
+      {downloadError && (
+        <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+            <span>{downloadError}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setDownloadError(null)}
+            className="text-rose-500 hover:text-rose-700"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       {/* Book Grid */}
       {filteredBooks.length === 0 ? (
@@ -156,18 +198,9 @@ export const ReferenceLibraryView: React.FC<ReferenceLibraryViewProps> = ({
 
                 <div className="flex items-center gap-2">
                   <button
-                    onClick={() => {
-                      if (b.fileData) {
-                        downloadDataUrl(b.fileName || `${b.title.replace(/\s+/g, '_')}.pdf`, b.fileData);
-                      } else {
-                        downloadFile(
-                          `${b.title.replace(/\s+/g, '_')}.txt`,
-                          b.content,
-                          'text/plain'
-                        );
-                      }
-                    }}
-                    className="p-1.5 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-600 text-xs font-medium transition-colors"
+                    onClick={() => handleBookDownload(b)}
+                    disabled={downloadingBookId === b.id}
+                    className="p-1.5 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-600 text-xs font-medium transition-colors disabled:opacity-50"
                     title={b.fileData ? 'Download original textbook file' : 'Download reference text file'}
                   >
                     <Download className="w-3.5 h-3.5" />
@@ -178,7 +211,7 @@ export const ReferenceLibraryView: React.FC<ReferenceLibraryViewProps> = ({
                     className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-stone-900 hover:bg-stone-800 text-white text-xs font-medium transition-colors"
                   >
                     <Eye className="w-3.5 h-3.5" />
-                    <span>View Info</span>
+                    <span>{isPdfBook(b) ? 'Open PDF' : 'View Info'}</span>
                   </button>
 
                   {isAdmin && (
@@ -200,8 +233,8 @@ export const ReferenceLibraryView: React.FC<ReferenceLibraryViewProps> = ({
       {/* Book Reader Modal */}
       {selectedBook && (
         <div className="fixed inset-0 z-50 bg-stone-950/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-stone-900 border border-stone-800 rounded-2xl w-full max-w-4xl max-h-[85vh] flex flex-col p-6 shadow-2xl text-stone-100">
-            <div className="flex items-center justify-between border-b border-stone-800 pb-4 mb-4">
+          <div className="bg-stone-900 border border-stone-800 rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col p-6 shadow-2xl text-stone-100">
+            <div className="flex items-center justify-between border-b border-stone-800 pb-4 mb-2">
               <div>
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-mono uppercase text-amber-400 font-bold">Reference Textbook</span>
@@ -223,32 +256,36 @@ export const ReferenceLibraryView: React.FC<ReferenceLibraryViewProps> = ({
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto bg-stone-950 p-6 rounded-xl border border-stone-800 font-mono text-xs md:text-sm text-stone-300 whitespace-pre-wrap leading-relaxed selection:bg-amber-400 selection:text-stone-950">
-              {selectedBook.content}
-            </div>
+            {isPdfBook(selectedBook) ? (
+              <div className="flex-1 overflow-hidden">
+                <PdfViewer
+                  collectionName="books"
+                  docId={selectedBook.id}
+                  inlineDataUrl={selectedBook.fileData}
+                  fileName={selectedBook.fileName || `${selectedBook.title}.pdf`}
+                  maxHeightClass="h-[62vh]"
+                />
+              </div>
+            ) : (
+              <>
+                <div className="flex-1 overflow-y-auto bg-stone-950 p-6 rounded-xl border border-stone-800 font-mono text-xs md:text-sm text-stone-300 whitespace-pre-wrap leading-relaxed selection:bg-amber-400 selection:text-stone-950 mt-2">
+                  {selectedBook.content}
+                </div>
 
-            <div className="mt-4 pt-3 border-t border-stone-800 flex items-center justify-between">
-              <span className="text-xs text-stone-500 font-mono">
-                Total Words: ~{Math.round(selectedBook.content.split(/\s+/).length).toLocaleString()}
-              </span>
-              <button
-                onClick={() => {
-                  if (selectedBook.fileData) {
-                    downloadDataUrl(selectedBook.fileName || `${selectedBook.title.replace(/\s+/g, '_')}.pdf`, selectedBook.fileData);
-                  } else {
-                    downloadFile(
-                      `${selectedBook.title.replace(/\s+/g, '_')}.txt`,
-                      selectedBook.content,
-                      'text/plain'
-                    );
-                  }
-                }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-medium transition-colors"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>{selectedBook.fileData ? 'Download Textbook File' : 'Download Book Notes'}</span>
-              </button>
-            </div>
+                <div className="mt-4 pt-3 border-t border-stone-800 flex items-center justify-between">
+                  <span className="text-xs text-stone-500 font-mono">
+                    Total Words: ~{Math.round(selectedBook.content.split(/\s+/).length).toLocaleString()}
+                  </span>
+                  <button
+                    onClick={() => handleBookDownload(selectedBook)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-medium transition-colors"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>{selectedBook.fileData ? 'Download Textbook File' : 'Download Book Notes'}</span>
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

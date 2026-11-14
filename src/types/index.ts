@@ -36,6 +36,7 @@ export interface Book {
   content: string;
   excerpt?: string;
   fileData?: string;
+  fileChunkCount?: number;
   mimeType?: string;
   createdBy: string;
   createdAt: string;
@@ -62,6 +63,7 @@ export interface Question {
   sourceBooks?: string;
   webSources?: WebGroundingSource[];
   pdfDataUrl?: string;
+  pdfChunkCount?: number;
   pdfFileName?: string;
   mimeType?: string;
   askedBy: string;
@@ -154,6 +156,7 @@ export interface WordNoteDocument {
   plainText: string;
   pageSettingsJson?: string;
   pdfDataUrl: string;
+  pdfChunkCount?: number;
   pdfFileName: string;
   wordCount: number;
   charCount: number;

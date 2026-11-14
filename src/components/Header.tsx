@@ -25,6 +25,7 @@ interface HeaderProps {
   onSelectCourse: (course: Course) => void;
   currentUser: User | null;
   isAdmin: boolean;
+  canToggleAdmin?: boolean;
   onToggleDemoAdmin: () => void;
   onOpenNewCourse: () => void;
   onOpenBookManager: () => void;
@@ -37,6 +38,7 @@ export const Header: React.FC<HeaderProps> = ({
   onSelectCourse,
   currentUser,
   isAdmin,
+  canToggleAdmin = false,
   onToggleDemoAdmin,
   onOpenNewCourse,
   onOpenBookManager,
@@ -180,19 +182,21 @@ export const Header: React.FC<HeaderProps> = ({
               </button>
             )}
 
-            {/* Admin Role Toggle (for convenient evaluation) */}
-            <button
-              onClick={onToggleDemoAdmin}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                isAdmin
-                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-                  : 'bg-stone-800/80 text-stone-400 border-stone-700 hover:text-stone-200'
-              }`}
-              title="Toggle admin mode"
-            >
-              <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
-              <span>{isAdmin ? 'Admin Mode' : 'Student Mode'}</span>
-            </button>
+            {/* Admin Role Toggle (only visible to verified admin for Student View preview) */}
+            {canToggleAdmin && (
+              <button
+                onClick={onToggleDemoAdmin}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                  isAdmin
+                    ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                    : 'bg-stone-800/80 text-stone-400 border-stone-700 hover:text-stone-200'
+                }`}
+                title="Toggle between Admin Mode and Student View"
+              >
+                <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
+                <span>{isAdmin ? 'Admin Mode' : 'Student View'}</span>
+              </button>
+            )}
 
             {/* User Auth Info / Google Sign In */}
             {currentUser ? (
@@ -238,14 +242,17 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* Mobile Menu Button */}
           <div className="flex items-center gap-2 lg:hidden">
-            <button
-              onClick={onToggleDemoAdmin}
-              className={`p-1.5 rounded-lg text-xs border ${
-                isAdmin ? 'bg-amber-500/20 text-amber-300 border-amber-500/40' : 'bg-stone-800 text-stone-400 border-stone-700'
-              }`}
-            >
-              <ShieldCheck className="w-4 h-4 text-amber-400" />
-            </button>
+            {canToggleAdmin && (
+              <button
+                onClick={onToggleDemoAdmin}
+                className={`p-1.5 rounded-lg text-xs border ${
+                  isAdmin ? 'bg-amber-500/20 text-amber-300 border-amber-500/40' : 'bg-stone-800 text-stone-400 border-stone-700'
+                }`}
+                title="Toggle between Admin Mode and Student View"
+              >
+                <ShieldCheck className="w-4 h-4 text-amber-400" />
+              </button>
+            )}
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
               className="p-2 rounded-lg bg-stone-800 text-stone-200 hover:text-white"

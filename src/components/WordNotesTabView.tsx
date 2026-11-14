@@ -39,6 +39,8 @@ import {
   Superscript,
 } from 'lucide-react';
 import { Course, Unit, WordNoteDocument, WordPageSettings } from '../types';
+import { resolvePdfDataUrl } from '../lib/dataService';
+import { downloadDataUrlFile } from '../lib/pdfUtils';
 
 interface WordNotesTabViewProps {
   course: Course | null;
@@ -96,24 +98,6 @@ function parsePageSettings(jsonStr?: string): WordPageSettings {
   }
 }
 
-function dataUrlToBlobUrl(dataUrl: string): string {
-  try {
-    if (!dataUrl || !dataUrl.startsWith('data:')) return '';
-    const parts = dataUrl.split(',');
-    const mimeMatch = parts[0].match(/:(.*?);/);
-    const mime = mimeMatch ? mimeMatch[1] : 'application/pdf';
-    const bstr = atob(parts[1]);
-    let n = bstr.length;
-    const u8arr = new Uint8Array(n);
-    while (n--) {
-      u8arr[n] = bstr.charCodeAt(n);
-    }
-    const blob = new Blob([u8arr], { type: mime });
-    return URL.createObjectURL(blob);
-  } catch {
-    return '';
-  }
-}
 
 // Convert the exact Read-Only PDF Sheet DOM element into a multi-page PDF that is 100% visually identical
 async function convertDomSheetToExactPdf(params: {
@@ -596,6 +580,7 @@ export const WordNotesTabView: React.FC<WordNotesTabViewProps> = ({
   // Download exact PDF matching the Read-Only PDF View
   const handleDownloadPdf = async (note: WordNoteDocument) => {
     try {
+      setErrorMessage(null);
       setIsDownloadingPdf(true);
       let targetDataUrl = note.pdfDataUrl;
 
@@ -617,16 +602,23 @@ export const WordNotesTabView: React.FC<WordNotesTabViewProps> = ({
         }
       }
 
-      if (!targetDataUrl) return;
-      const blobUrl = dataUrlToBlobUrl(targetDataUrl);
-      const link = document.createElement('a');
-      link.href = blobUrl || targetDataUrl;
-      link.download = note.pdfFileName || `${note.title.replace(/\s+/g, '_')}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      if (blobUrl) {
-        setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
+      if (!targetDataUrl) {
+        setErrorMessage('No PDF data available for this note.');
+        return;
+      }
+      targetDataUrl = await resolvePdfDataUrl('word_notes', note.id, targetDataUrl);
+      if (!targetDataUrl) {
+        setErrorMessage('Unable to reconstruct PDF data for download.');
+        return;
+      }
+
+      const result = downloadDataUrlFile(
+        note.pdfFileName || `${note.title.replace(/\s+/g, '_')}.pdf`,
+        targetDataUrl,
+        'application/pdf'
+      );
+      if (!result.ok) {
+        setErrorMessage(result.error || 'Failed to download note PDF.');
       }
     } finally {
       setIsDownloadingPdf(false);
@@ -701,6 +693,19 @@ export const WordNotesTabView: React.FC<WordNotesTabViewProps> = ({
             </button>
           )}
         </div>
+
+        {errorMessage && (
+          <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center justify-between gap-2">
+            <span>{errorMessage}</span>
+            <button
+              type="button"
+              onClick={() => setErrorMessage(null)}
+              className="text-rose-600 hover:text-rose-800 font-semibold"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
 
         {courseNotes.length === 0 ? (
           <div className="bg-white rounded-2xl border border-stone-200 p-12 text-center shadow-sm">

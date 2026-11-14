@@ -12,6 +12,7 @@ import {
   BookOpen,
 } from 'lucide-react';
 import { Book as BookType, Course } from '../types';
+import { PdfViewer } from './PdfViewer';
 
 interface BookManagerModalProps {
   isOpen: boolean;
@@ -57,9 +58,14 @@ export const BookManagerModal: React.FC<BookManagerModalProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
 
+    if (file.size > 10 * 1024 * 1024) {
+      setErrorMessage('File exceeds 10MB limit. Please upload a file under 10MB.');
+      return;
+    }
+
     setFileName(file.name);
     setFileSize(file.size);
-    setMimeType(file.type || 'application/pdf');
+    setMimeType(file.type || (file.name.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream'));
 
     // If title is empty, infer a clean title from file name
     if (!title) {
@@ -469,9 +475,23 @@ export const BookManagerModal: React.FC<BookManagerModalProps> = ({
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto bg-stone-950 p-4 rounded-xl border border-stone-800 text-xs font-mono text-stone-300 whitespace-pre-wrap leading-relaxed">
-              {viewingBook.content}
-            </div>
+            {viewingBook.fileData &&
+            (viewingBook.mimeType?.toLowerCase().includes('pdf') ||
+              (viewingBook.fileName || '').toLowerCase().endsWith('.pdf')) ? (
+              <div className="flex-1 overflow-hidden">
+                <PdfViewer
+                  collectionName="books"
+                  docId={viewingBook.id}
+                  inlineDataUrl={viewingBook.fileData}
+                  fileName={viewingBook.fileName || `${viewingBook.title}.pdf`}
+                  maxHeightClass="h-[60vh]"
+                />
+              </div>
+            ) : (
+              <div className="flex-1 overflow-y-auto bg-stone-950 p-4 rounded-xl border border-stone-800 text-xs font-mono text-stone-300 whitespace-pre-wrap leading-relaxed">
+                {viewingBook.content}
+              </div>
+            )}
           </div>
         </div>
       )}
