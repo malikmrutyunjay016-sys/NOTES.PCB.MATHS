@@ -8,7 +8,7 @@ import {
   getDocs,
   writeBatch,
 } from 'firebase/firestore';
-import { auth, db, handleFirestoreError, OperationType } from './firebase';
+import { auth, db, handleFirestoreError, isQuotaExceededError, OperationType } from './firebase';
 import { Course, Unit, Book, Question, WordNoteDocument } from '../types';
 import { CHUNKED_PDF_MARKER } from './pdfUtils';
 
@@ -119,6 +119,10 @@ export function subscribeCourses(
     },
     (error) => {
       onError?.(error);
+      if (isQuotaExceededError(error)) {
+        console.warn(`Firestore quota exceeded while reading ${colPath}.`);
+        return;
+      }
       try {
         handleFirestoreError(error, OperationType.GET, colPath);
       } catch {
@@ -184,6 +188,10 @@ export function subscribeUnits(
     },
     (error) => {
       onError?.(error);
+      if (isQuotaExceededError(error)) {
+        console.warn(`Firestore quota exceeded while reading ${colPath}.`);
+        return;
+      }
       try {
         handleFirestoreError(error, OperationType.GET, colPath);
       } catch {
@@ -241,6 +249,10 @@ export function subscribeBooks(
     },
     (error) => {
       onError?.(error);
+      if (isQuotaExceededError(error)) {
+        console.warn(`Firestore quota exceeded while reading ${colPath}.`);
+        return;
+      }
       try {
         handleFirestoreError(error, OperationType.GET, colPath);
       } catch {
@@ -312,6 +324,10 @@ export function subscribeQuestions(
     },
     (error) => {
       onError?.(error);
+      if (isQuotaExceededError(error)) {
+        console.warn(`Firestore quota exceeded while reading ${colPath}.`);
+        return;
+      }
       try {
         handleFirestoreError(error, OperationType.GET, colPath);
       } catch {
@@ -454,6 +470,10 @@ export function subscribeWordNotes(
     },
     (error) => {
       onError?.(error);
+      if (isQuotaExceededError(error)) {
+        console.warn(`Firestore quota exceeded while reading ${colPath}.`);
+        return;
+      }
       try {
         handleFirestoreError(error, OperationType.GET, colPath);
       } catch {

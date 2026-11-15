@@ -22,7 +22,15 @@ import {
   KeyRound,
 } from 'lucide-react';
 import { doc, getDoc } from 'firebase/firestore';
-import { auth, db, googleProvider, sendEmailVerification } from './lib/firebase';
+import {
+  auth,
+  db,
+  googleProvider,
+  sendEmailVerification,
+  isQuotaExceededError,
+  FIRESTORE_QUOTA_UPGRADE_URL,
+  FIRESTORE_PRICING_URL,
+} from './lib/firebase';
 import { signInWithPopup } from 'firebase/auth';
 import {
   subscribeCourses,
@@ -93,8 +101,10 @@ export default function App() {
   const [isAdminDocVerified, setIsAdminDocVerified] = useState<boolean>(false);
   const [verificationBannerNotice, setVerificationBannerNotice] = useState<string | null>(null);
 
-  // Notification for guest mode
+  // Notification for guest mode & Firestore quota state
   const [showGuestBanner, setShowGuestBanner] = useState<boolean>(true);
+  const [firestoreQuotaExceeded, setFirestoreQuotaExceeded] = useState<boolean>(false);
+  const [dismissedQuotaBanner, setDismissedQuotaBanner] = useState<boolean>(false);
 
   // Determine admin privileges strictly from verified admin email or /admins/{uid} record
   const isVerifiedAdmin = Boolean(
@@ -154,6 +164,14 @@ export default function App() {
 
   // Firestore Real-Time Subscriptions
   useEffect(() => {
+    const handleSubscriptionError = (label: string) => (err: any) => {
+      if (isQuotaExceededError(err)) {
+        setFirestoreQuotaExceeded(true);
+      } else {
+        console.log(`${label} listener status:`, err?.message);
+      }
+    };
+
     const unsubCourses = subscribeCourses(
       (firestoreCourses) => {
         setCoursesLoaded(true);
@@ -167,7 +185,7 @@ export default function App() {
       },
       (err) => {
         setCoursesLoaded(true);
-        console.log('Courses listener status:', err?.message);
+        handleSubscriptionError('Courses')(err);
       }
     );
 
@@ -177,7 +195,7 @@ export default function App() {
           setUnits(firestoreUnits);
         }
       },
-      (err) => console.log('Units listener status:', err?.message)
+      handleSubscriptionError('Units')
     );
 
     const unsubBooks = subscribeBooks(
@@ -186,7 +204,7 @@ export default function App() {
           setBooks(firestoreBooks);
         }
       },
-      (err) => console.log('Books listener status:', err?.message)
+      handleSubscriptionError('Books')
     );
 
     const unsubQuestions = subscribeQuestions(
@@ -195,7 +213,7 @@ export default function App() {
           setQuestions(firestoreQuestions);
         }
       },
-      (err) => console.log('Questions listener status:', err?.message)
+      handleSubscriptionError('Questions')
     );
 
     const unsubWordNotes = subscribeWordNotes(
@@ -204,7 +222,7 @@ export default function App() {
           setWordNotes(firestoreWordNotes);
         }
       },
-      (err) => console.log('WordNotes listener status:', err?.message)
+      handleSubscriptionError('WordNotes')
     );
 
     return () => {
@@ -638,6 +656,45 @@ export default function App() {
               <button
                 onClick={() => setShowGuestBanner(false)}
                 className="text-stone-400 hover:text-stone-600 ml-1"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Firestore Daily Read Quota Notice Banner */}
+      {firestoreQuotaExceeded && !dismissedQuotaBanner && (
+        <div className="bg-rose-50 border-b border-rose-200 px-4 py-3 text-xs text-rose-900">
+          <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+            <div className="flex items-start sm:items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5 sm:mt-0" />
+              <span>
+                <strong>Firestore Free Daily Read Quota Exceeded:</strong> The project&apos;s free daily read units limit has been reached. Quota resets tomorrow, or you can upgrade the database in Firebase Console. Local offline cache will still show previously synced data when available.
+              </span>
+            </div>
+            <div className="flex items-center gap-3 shrink-0">
+              <a
+                href={FIRESTORE_QUOTA_UPGRADE_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-semibold text-rose-800 underline hover:text-rose-950"
+              >
+                Open Firebase Database
+              </a>
+              <a
+                href={FIRESTORE_PRICING_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-semibold text-stone-700 underline hover:text-stone-900"
+              >
+                Quota Details
+              </a>
+              <button
+                type="button"
+                onClick={() => setDismissedQuotaBanner(true)}
+                className="text-rose-500 hover:text-rose-800 ml-1"
               >
                 ✕
               </button>

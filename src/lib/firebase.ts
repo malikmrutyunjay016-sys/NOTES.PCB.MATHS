@@ -16,16 +16,49 @@ import {
 } from 'firebase/auth';
 import {
   getFirestore,
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
   doc,
   getDocFromServer,
-  enableIndexedDbPersistence,
+  Firestore,
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, (firebaseConfig as any).firestoreDatabaseId);
+const firestoreDatabaseId = (firebaseConfig as any).firestoreDatabaseId;
+
+function initFirestoreDb(): Firestore {
+  try {
+    return initializeFirestore(
+      app,
+      {
+        localCache: persistentLocalCache({
+          tabManager: persistentMultipleTabManager(),
+        }),
+      },
+      firestoreDatabaseId
+    );
+  } catch {
+    return getFirestore(app, firestoreDatabaseId);
+  }
+}
+
+export const db = initFirestoreDb();
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
+
+export const FIRESTORE_QUOTA_UPGRADE_URL = `https://console.firebase.google.com/project/${firebaseConfig.projectId}/firestore/databases/${firestoreDatabaseId}/data?openUpgradeDialog=true`;
+export const FIRESTORE_PRICING_URL = 'https://firebase.google.com/pricing#cloud-firestore';
+
+export function isQuotaExceededError(error: unknown): boolean {
+  const code = (error as { code?: string })?.code;
+  const msg = error instanceof Error ? error.message : String(error || '');
+  return (
+    code === 'resource-exhausted' ||
+    /quota\s*(limit\s*)?exceeded|free daily read units/i.test(msg)
+  );
+}
 
 export async function createSeparateAuthUser(email: string, password: string): Promise<string> {
   const secondaryApp = initializeApp(firebaseConfig, `admin-provision-${Date.now()}`);
