@@ -506,13 +506,6 @@ export const WordNotesTabView: React.FC<WordNotesTabViewProps> = ({
     }
   };
 
-  const selectedIsUploadedPdf = Boolean(
-    selectedNote &&
-      (selectedNote.htmlContent === UPLOADED_PDF_MARKER ||
-        !selectedNote.htmlContent?.trim())
-  );
-  const selectedNotePageSettings = parsePageSettings(selectedNote?.pageSettingsJson);
-
   return (
     <div className="space-y-6">
       {/* Top Banner */}
@@ -754,7 +747,7 @@ export const WordNotesTabView: React.FC<WordNotesTabViewProps> = ({
         </form>
       )}
 
-      {/* Notes Empty State or Split List + Viewer */}
+      {/* Notes Empty State or Full-Width PDF Viewer List */}
       {courseNotes.length === 0 ? (
         <div className="bg-white rounded-2xl border border-stone-200 p-12 text-center shadow-sm">
           <FileText className="w-12 h-12 text-stone-400 mx-auto mb-3" />
@@ -778,53 +771,33 @@ export const WordNotesTabView: React.FC<WordNotesTabViewProps> = ({
           )}
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          {/* Left Sidebar: Available PDF Notes */}
-          <div className="lg:col-span-1 space-y-3">
-            <div className="text-xs font-mono font-bold uppercase text-stone-500 px-1">
-              Available PDF Notes ({courseNotes.length})
-            </div>
-            <div className="space-y-2.5">
-              {courseNotes.map((note) => {
-                const isSelected = selectedNote?.id === note.id;
-                const linkedUnit = units.find((u) => u.id === note.unitId);
-                return (
-                  <div
-                    key={note.id}
-                    onClick={() => setSelectedNoteId(note.id)}
-                    className={`cursor-pointer p-4 rounded-xl border transition-all ${
-                      isSelected
-                        ? 'bg-stone-900 text-stone-100 border-stone-900 shadow-md'
-                        : 'bg-white text-stone-800 border-stone-200 hover:border-amber-400'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <FileText
-                          className={`w-4 h-4 shrink-0 ${
-                            isSelected ? 'text-amber-400' : 'text-rose-600'
-                          }`}
-                        />
-                        <span className="font-semibold text-xs line-clamp-2">{note.title}</span>
-                      </div>
-                      <span
-                        className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold shrink-0 ${
-                          isSelected
-                            ? 'bg-amber-500/20 text-amber-300'
-                            : 'bg-rose-50 text-rose-700 border border-rose-200'
-                        }`}
-                      >
-                        PDF
-                      </span>
-                    </div>
+        <div className="space-y-6">
+          {courseNotes.map((note) => {
+            const isExpanded = courseNotes.length === 1 || selectedNote?.id === note.id;
+            const linkedUnit = units.find((u) => u.id === note.unitId);
+            const noteIsUploadedPdf = Boolean(
+              note.htmlContent === UPLOADED_PDF_MARKER || !note.htmlContent?.trim()
+            );
+            const notePageSettings = parsePageSettings(note.pageSettingsJson);
 
-                    <div
-                      className={`mt-2 text-[11px] font-mono flex flex-wrap items-center gap-1.5 ${
-                        isSelected ? 'text-stone-400' : 'text-stone-500'
-                      }`}
-                    >
+            return (
+              <div key={note.id} className="space-y-4">
+                <div className="bg-white rounded-2xl border border-stone-200 p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="px-2 py-0.5 rounded bg-rose-100 text-rose-800 border border-rose-200 text-[10px] font-mono font-bold">
+                        PDF NOTE
+                      </span>
+                      <h3 className="font-serif font-bold text-base text-stone-900 truncate">
+                        {note.title}
+                      </h3>
+                    </div>
+                    <div className="text-xs text-stone-500 mt-1 flex flex-wrap items-center gap-2 font-mono">
+                      <span>{note.pdfFileName}</span>
+                      <span>•</span>
                       <span>
-                        {note.pageCount || 1} {note.pageCount === 1 ? 'Page' : 'Pages'}
+                        {note.pageCount || 1}{' '}
+                        {note.pageCount === 1 ? 'Page' : 'Pages'}
                       </span>
                       {note.category && (
                         <>
@@ -838,122 +811,82 @@ export const WordNotesTabView: React.FC<WordNotesTabViewProps> = ({
                           <span>Unit {linkedUnit.unitNumber}</span>
                         </>
                       )}
-                    </div>
-
-                    <div className="mt-3 flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDownloadPdf(note);
-                        }}
-                        disabled={isDownloadingPdf}
-                        className={`flex-1 py-1.5 px-3 rounded-lg text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-colors ${
-                          isSelected
-                            ? 'bg-amber-500 hover:bg-amber-400 text-stone-950'
-                            : 'bg-stone-100 hover:bg-stone-200 text-stone-800'
-                        }`}
-                      >
-                        <Download className="w-3.5 h-3.5" />
-                        <span>
-                          {isDownloadingPdf && isSelected ? 'Preparing...' : 'Download'}
-                        </span>
-                      </button>
-
-                      {isAdmin && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setNoteToDelete(note);
-                          }}
-                          className={`p-1.5 rounded-lg border transition-colors ${
-                            isSelected
-                              ? 'border-stone-700 text-stone-300 hover:text-rose-400 hover:border-rose-500/40'
-                              : 'border-stone-200 text-stone-400 hover:text-rose-600 hover:bg-rose-50'
-                          }`}
-                          title="Delete Note PDF"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                      {note.comments && (
+                        <>
+                          <span>•</span>
+                          <span className="font-sans text-stone-600">{note.comments}</span>
+                        </>
                       )}
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          </div>
 
-          {/* Right Area: PDF Viewer */}
-          {selectedNote && (
-            <div className="lg:col-span-3 space-y-4">
-              <div className="bg-white rounded-2xl border border-stone-200 p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="px-2 py-0.5 rounded bg-rose-100 text-rose-800 border border-rose-200 text-[10px] font-mono font-bold">
-                      PDF NOTE
-                    </span>
-                    <h3 className="font-serif font-bold text-base text-stone-900 truncate">
-                      {selectedNote.title}
-                    </h3>
-                  </div>
-                  <div className="text-xs text-stone-500 mt-1 flex flex-wrap items-center gap-2 font-mono">
-                    <span>{selectedNote.pdfFileName}</span>
-                    <span>•</span>
-                    <span>
-                      {selectedNote.pageCount || 1}{' '}
-                      {selectedNote.pageCount === 1 ? 'Page' : 'Pages'}
-                    </span>
-                    {selectedNote.comments && (
-                      <>
-                        <span>•</span>
-                        <span className="font-sans text-stone-600">{selectedNote.comments}</span>
-                      </>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {courseNotes.length > 1 && !isExpanded && (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedNoteId(note.id)}
+                        className="px-3 py-2 rounded-xl bg-stone-900 hover:bg-stone-800 text-white text-xs font-semibold transition-colors"
+                      >
+                        View PDF
+                      </button>
+                    )}
+
+                    {!noteIsUploadedPdf && (
+                      <button
+                        type="button"
+                        disabled={isDownloadingPdf}
+                        onClick={() => handleDownloadPdf(note)}
+                        className="px-3 py-2 rounded-xl border border-stone-200 bg-stone-50 hover:bg-stone-100 text-stone-800 text-xs font-semibold flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        <span>{isDownloadingPdf && isExpanded ? 'Preparing...' : 'Download'}</span>
+                      </button>
+                    )}
+
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        onClick={() => setNoteToDelete(note)}
+                        className="px-3 py-2 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Delete PDF</span>
+                      </button>
                     )}
                   </div>
                 </div>
 
-                {isAdmin && (
-                  <button
-                    type="button"
-                    onClick={() => setNoteToDelete(selectedNote)}
-                    className="px-3 py-2 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-semibold flex items-center gap-1.5 shrink-0 transition-colors"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>Delete PDF</span>
-                  </button>
-                )}
+                {isExpanded &&
+                  (noteIsUploadedPdf ? (
+                    <PdfViewer
+                      collectionName="word_notes"
+                      docId={note.id}
+                      inlineDataUrl={note.pdfDataUrl}
+                      fileName={note.pdfFileName}
+                      maxHeightClass="h-[680px]"
+                    />
+                  ) : (
+                    <div className="bg-stone-800 rounded-2xl border border-stone-700 p-4 md:p-8 shadow-inner overflow-x-auto">
+                      <ReadOnlyPdfSheet
+                        sheetRef={readOnlyViewerSheetRef}
+                        title={note.title}
+                        subject={note.subject}
+                        author={note.author}
+                        category={note.category}
+                        status={note.status}
+                        comments={note.comments}
+                        pdfFileName={note.pdfFileName}
+                        wordCount={note.wordCount}
+                        version={note.version}
+                        pageCount={note.pageCount}
+                        htmlContent={note.htmlContent}
+                        pageSettings={notePageSettings}
+                      />
+                    </div>
+                  ))}
               </div>
-
-              {selectedIsUploadedPdf ? (
-                <PdfViewer
-                  collectionName="word_notes"
-                  docId={selectedNote.id}
-                  inlineDataUrl={selectedNote.pdfDataUrl}
-                  fileName={selectedNote.pdfFileName}
-                  maxHeightClass="h-[680px]"
-                />
-              ) : (
-                <div className="bg-stone-800 rounded-2xl border border-stone-700 p-4 md:p-8 shadow-inner overflow-x-auto">
-                  <ReadOnlyPdfSheet
-                    sheetRef={readOnlyViewerSheetRef}
-                    title={selectedNote.title}
-                    subject={selectedNote.subject}
-                    author={selectedNote.author}
-                    category={selectedNote.category}
-                    status={selectedNote.status}
-                    comments={selectedNote.comments}
-                    pdfFileName={selectedNote.pdfFileName}
-                    wordCount={selectedNote.wordCount}
-                    version={selectedNote.version}
-                    pageCount={selectedNote.pageCount}
-                    htmlContent={selectedNote.htmlContent}
-                    pageSettings={selectedNotePageSettings}
-                  />
-                </div>
-              )}
-            </div>
-          )}
+            );
+          })}
         </div>
       )}
 
