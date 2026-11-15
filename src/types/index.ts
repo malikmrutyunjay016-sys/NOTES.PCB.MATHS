@@ -7,6 +7,8 @@ export interface Course {
   semester?: string;
   syllabusText?: string;
   answerFormat?: string; // 'detailed' | 'bullet_summary' | 'qa_formula' | 'conceptual_breakdown' | 'exam_prep'
+  paperType?: 'theory' | 'practical';
+  programmingLanguage?: string;
   createdBy: string;
   createdAt: string;
   updatedAt?: string;
@@ -55,6 +57,7 @@ export interface Question {
   answer: string;
   answerFormat?: string;
   marks?: number;
+  questionNumber?: number;
   section?: 'Group A' | 'Group B' | 'Group C' | 'Group D' | string;
   isCurated?: boolean;
   thinkingUsed?: boolean;

@@ -2,13 +2,16 @@ import React from 'react';
 import {
   Layers,
   BookMarked,
+  HelpCircle,
   WifiOff,
 } from 'lucide-react';
 import { usePWAInstall } from '../lib/usePWAInstall';
 
 interface MobileFooterNavProps {
-  activeTab: 'notes' | 'units' | 'library' | 'course_settings' | '1M' | '2M' | '5M' | '8M';
-  onSelectTab: (tab: 'units' | 'library') => void;
+  activeTab: 'notes' | 'units' | 'practical_questions' | 'library' | 'course_settings' | '1M' | '2M' | '5M' | '8M';
+  onSelectTab: (tab: 'units' | 'practical_questions' | 'library') => void;
+  isPractical?: boolean;
+  questionsCount?: number;
   unitsCount: number;
   booksCount: number;
   notesCount?: number;
@@ -18,6 +21,8 @@ interface MobileFooterNavProps {
 export const MobileFooterNav: React.FC<MobileFooterNavProps> = ({
   activeTab,
   onSelectTab,
+  isPractical = false,
+  questionsCount = 0,
   unitsCount,
   booksCount,
 }) => {
@@ -39,17 +44,31 @@ export const MobileFooterNav: React.FC<MobileFooterNavProps> = ({
           <div className="flex items-center justify-between h-16 gap-2">
             {/* Navigation Tabs */}
             <div className="flex items-center gap-1 sm:gap-2 flex-1 justify-around sm:justify-start">
-              <button
-                onClick={() => onSelectTab('units')}
-                className={`flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-3 py-2 rounded-xl text-xs font-semibold transition-all ${
-                  activeTab === 'units'
-                    ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                    : 'text-stone-400 hover:text-stone-100 hover:bg-stone-900'
-                }`}
-              >
-                <Layers className="w-4 h-4 shrink-0" />
-                <span className="text-[11px] sm:text-xs">Syllabus & Notes ({unitsCount})</span>
-              </button>
+              {isPractical ? (
+                <button
+                  onClick={() => onSelectTab('practical_questions')}
+                  className={`flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-3 py-2 rounded-xl text-xs font-semibold transition-all ${
+                    activeTab === 'practical_questions'
+                      ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                      : 'text-stone-400 hover:text-stone-100 hover:bg-stone-900'
+                  }`}
+                >
+                  <HelpCircle className="w-4 h-4 shrink-0" />
+                  <span className="text-[11px] sm:text-xs">Questions ({questionsCount})</span>
+                </button>
+              ) : (
+                <button
+                  onClick={() => onSelectTab('units')}
+                  className={`flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-3 py-2 rounded-xl text-xs font-semibold transition-all ${
+                    activeTab === 'units'
+                      ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                      : 'text-stone-400 hover:text-stone-100 hover:bg-stone-900'
+                  }`}
+                >
+                  <Layers className="w-4 h-4 shrink-0" />
+                  <span className="text-[11px] sm:text-xs">Syllabus &amp; Notes ({unitsCount})</span>
+                </button>
+              )}
 
               <button
                 onClick={() => onSelectTab('library')}

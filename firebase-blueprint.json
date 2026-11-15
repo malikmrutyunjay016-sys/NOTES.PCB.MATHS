@@ -13,6 +13,8 @@
         "semester": { "type": "string", "maxLength": 50 },
         "syllabusText": { "type": "string", "maxLength": 50000 },
         "answerFormat": { "type": "string", "maxLength": 100 },
+        "paperType": { "type": "string", "enum": ["theory", "practical"], "maxLength": 20 },
+        "programmingLanguage": { "type": "string", "maxLength": 100 },
         "createdBy": { "type": "string", "maxLength": 128 },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
@@ -70,6 +72,7 @@
         "question": { "type": "string", "maxLength": 2000 },
         "answer": { "type": "string", "maxLength": 50000 },
         "marks": { "type": "number" },
+        "questionNumber": { "type": "number" },
         "section": { "type": "string", "maxLength": 50 },
         "answerFormat": { "type": "string", "maxLength": 100 },
         "isCurated": { "type": "boolean" },

@@ -39,7 +39,7 @@ service cloud.firestore {
     // Entity Validators
     function isValidCourse(data) {
       return data.keys().hasAll(['code', 'title', 'createdBy', 'createdAt']) &&
-        data.keys().hasOnly(['id', 'code', 'title', 'description', 'department', 'semester', 'syllabusText', 'answerFormat', 'createdBy', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'code', 'title', 'description', 'department', 'semester', 'syllabusText', 'answerFormat', 'paperType', 'programmingLanguage', 'createdBy', 'createdAt', 'updatedAt']) &&
         data.code is string && data.code.size() > 0 && data.code.size() <= 50 &&
         data.title is string && data.title.size() > 0 && data.title.size() <= 200 &&
         (!('description' in data) || (data.description is string && data.description.size() <= 2000)) &&
@@ -47,6 +47,8 @@ service cloud.firestore {
         (!('semester' in data) || (data.semester is string && data.semester.size() <= 50)) &&
         (!('syllabusText' in data) || (data.syllabusText is string && data.syllabusText.size() <= 50000)) &&
         (!('answerFormat' in data) || (data.answerFormat is string && data.answerFormat.size() <= 100)) &&
+        (!('paperType' in data) || (data.paperType is string && data.paperType in ['theory', 'practical'])) &&
+        (!('programmingLanguage' in data) || (data.programmingLanguage is string && data.programmingLanguage.size() <= 100)) &&
         data.createdBy is string && data.createdBy.size() <= 128;
     }
 
@@ -81,12 +83,13 @@ service cloud.firestore {
 
     function isValidQuestion(data) {
       return data.keys().hasAll(['courseId', 'question', 'answer', 'askedBy', 'createdAt']) &&
-        data.keys().hasOnly(['id', 'courseId', 'unitId', 'question', 'answer', 'marks', 'section', 'answerFormat', 'isCurated', 'thinkingUsed', 'groundedInSearch', 'modelUsed', 'sourceBooks', 'webSources', 'pdfDataUrl', 'pdfChunkCount', 'pdfFileName', 'mimeType', 'askedBy', 'askedByName', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'courseId', 'unitId', 'question', 'answer', 'marks', 'questionNumber', 'section', 'answerFormat', 'isCurated', 'thinkingUsed', 'groundedInSearch', 'modelUsed', 'sourceBooks', 'webSources', 'pdfDataUrl', 'pdfChunkCount', 'pdfFileName', 'mimeType', 'askedBy', 'askedByName', 'createdAt', 'updatedAt']) &&
         data.courseId is string && data.courseId.size() <= 128 &&
         (!('unitId' in data) || (data.unitId is string && data.unitId.size() <= 128)) &&
         data.question is string && data.question.size() > 0 && data.question.size() <= 2000 &&
         data.answer is string && data.answer.size() > 0 && data.answer.size() <= 50000 &&
         (!('marks' in data) || (data.marks is number)) &&
+        (!('questionNumber' in data) || (data.questionNumber is number)) &&
         (!('section' in data) || (data.section is string && data.section.size() <= 50)) &&
         (!('answerFormat' in data) || (data.answerFormat is string && data.answerFormat.size() <= 100)) &&
         (!('isCurated' in data) || (data.isCurated is bool)) &&

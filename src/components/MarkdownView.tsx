@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { Copy, Check } from 'lucide-react';
+import katex from 'katex';
+import { LatexText } from './LatexText';
 
 interface MarkdownViewProps {
   content: string;
@@ -25,13 +27,15 @@ export const MarkdownView: React.FC<MarkdownViewProps> = ({ content, className =
   let inCodeBlock = false;
   let codeBuffer: string[] = [];
   let codeLang = '';
+  let inMathBlock = false;
+  let mathBuffer: string[] = [];
   let blockKey = 0;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
 
     // Handle code blocks ```
-    if (line.trim().startsWith('```')) {
+    if (!inMathBlock && line.trim().startsWith('```')) {
       if (inCodeBlock) {
         const fullCode = codeBuffer.join('\n');
         const currentIndex = blockKey++;
@@ -78,6 +82,37 @@ export const MarkdownView: React.FC<MarkdownViewProps> = ({ content, className =
       continue;
     }
 
+    // Handle multi-line $$ ... $$ display math blocks
+    if (line.trim() === '$$') {
+      if (inMathBlock) {
+        const expr = mathBuffer.join('\n').trim();
+        const html = katex.renderToString(expr, {
+          displayMode: true,
+          throwOnError: false,
+          strict: false,
+          trust: false,
+        });
+        elements.push(
+          <div
+            key={`math-${blockKey++}`}
+            className="my-3 overflow-x-auto text-center py-1"
+            dangerouslySetInnerHTML={{ __html: html }}
+          />
+        );
+        inMathBlock = false;
+        mathBuffer = [];
+      } else {
+        inMathBlock = true;
+        mathBuffer = [];
+      }
+      continue;
+    }
+
+    if (inMathBlock) {
+      mathBuffer.push(line);
+      continue;
+    }
+
     // Dividers
     if (line.trim() === '---' || line.trim() === '***') {
       elements.push(<hr key={blockKey++} className="my-6 border-stone-200" />);
@@ -88,7 +123,7 @@ export const MarkdownView: React.FC<MarkdownViewProps> = ({ content, className =
     if (line.startsWith('# ')) {
       elements.push(
         <h1 key={blockKey++} className="text-2xl md:text-3xl font-serif font-bold text-stone-900 mt-6 mb-3 tracking-tight">
-          {line.slice(2)}
+          {formatInline(line.slice(2))}
         </h1>
       );
       continue;
@@ -96,7 +131,7 @@ export const MarkdownView: React.FC<MarkdownViewProps> = ({ content, className =
     if (line.startsWith('## ')) {
       elements.push(
         <h2 key={blockKey++} className="text-xl md:text-2xl font-serif font-bold text-stone-800 mt-5 mb-2.5 pb-1 border-b border-stone-100 tracking-tight">
-          {line.slice(3)}
+          {formatInline(line.slice(3))}
         </h2>
       );
       continue;
@@ -104,7 +139,7 @@ export const MarkdownView: React.FC<MarkdownViewProps> = ({ content, className =
     if (line.startsWith('### ')) {
       elements.push(
         <h3 key={blockKey++} className="text-lg md:text-xl font-sans font-semibold text-stone-800 mt-4 mb-2">
-          {line.slice(4)}
+          {formatInline(line.slice(4))}
         </h3>
       );
       continue;
@@ -112,7 +147,7 @@ export const MarkdownView: React.FC<MarkdownViewProps> = ({ content, className =
     if (line.startsWith('#### ')) {
       elements.push(
         <h4 key={blockKey++} className="text-base font-sans font-semibold text-stone-700 mt-3 mb-1.5">
-          {line.slice(5)}
+          {formatInline(line.slice(5))}
         </h4>
       );
       continue;
@@ -121,7 +156,7 @@ export const MarkdownView: React.FC<MarkdownViewProps> = ({ content, className =
     // Blockquotes
     if (line.startsWith('> ')) {
       elements.push(
-        <blockquote key={blockKey++} className="border-l-4 border-amber-500 bg-amber-50/60 px-4 py-2.5 my-3 rounded-r-lg text-stone-700 italic text-sm">
+        <blockquote key={blockKey++} className="border border-amber-200 bg-amber-50/60 px-4 py-2.5 my-3 rounded-xl text-stone-700 italic text-sm">
           {formatInline(line.slice(2))}
         </blockquote>
       );
@@ -167,10 +202,9 @@ export const MarkdownView: React.FC<MarkdownViewProps> = ({ content, className =
   return <div className={`prose-stone max-w-none ${className}`}>{elements}</div>;
 };
 
-// Helper for bold, code tags, equations, italic
+// Helper for bold, code tags, and real KaTeX LaTeX equations
 function formatInline(text: string): React.ReactNode {
-  // Split by inline code, bold, math, italic
-  const parts = text.split(/(`[^`]+`|\*\*[^*]+\*\*|\$[^$]+\$)/g);
+  const parts = text.split(/(`[^`]+`|\*\*[^*]+\*\*)/g);
 
   return parts.map((part, index) => {
     if (part.startsWith('`') && part.endsWith('`')) {
@@ -183,17 +217,10 @@ function formatInline(text: string): React.ReactNode {
     if (part.startsWith('**') && part.endsWith('**')) {
       return (
         <strong key={index} className="font-semibold text-stone-900">
-          {part.slice(2, -2)}
+          <LatexText text={part.slice(2, -2)} />
         </strong>
       );
     }
-    if (part.startsWith('$') && part.endsWith('$')) {
-      return (
-        <span key={index} className="font-mono bg-stone-100/90 text-stone-800 px-1 py-0.5 rounded text-xs md:text-sm tracking-wide">
-          {part.slice(1, -1)}
-        </span>
-      );
-    }
-    return part;
+    return <LatexText key={index} text={part} />;
   });
 }

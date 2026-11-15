@@ -18,8 +18,11 @@ import {
   ChevronDown,
   ChevronUp,
   Trash2,
+  ArrowLeft,
+  KeyRound,
 } from 'lucide-react';
-import { auth, googleProvider } from './lib/firebase';
+import { doc, getDoc } from 'firebase/firestore';
+import { auth, db, googleProvider, sendEmailVerification } from './lib/firebase';
 import { signInWithPopup } from 'firebase/auth';
 import {
   subscribeCourses,
@@ -33,6 +36,7 @@ import {
   createBook,
   deleteBook,
   createQuestion,
+  updateQuestion,
   deleteQuestion,
   saveWordNote,
   deleteWordNote,
@@ -49,6 +53,10 @@ import { AddQuestionModal } from './components/AddQuestionModal';
 import { MobileFooterNav } from './components/MobileFooterNav';
 import { MarkdownView } from './components/MarkdownView';
 import { PdfViewer } from './components/PdfViewer';
+import { HomePage } from './components/HomePage';
+import { PracticalQuestionsView } from './components/PracticalQuestionsView';
+import { ExtractedPracticalQuestion } from './lib/practicalExtraction';
+import { AdminAuthModal } from './components/AdminAuthModal';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -61,12 +69,13 @@ export default function App() {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [wordNotes, setWordNotes] = useState<WordNoteDocument[]>([]);
 
-  // Selected Active Course & Unit
+  // Selected Active Course & Unit (starts null so user lands on Home Page)
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
   const [selectedUnit, setSelectedUnit] = useState<Unit | null>(null);
+  const [coursesLoaded, setCoursesLoaded] = useState<boolean>(false);
 
-  // Active View Tab: 'units' | 'library' | 'notes' | 'course_settings' | '1M' | '2M' | '5M' | '8M'
-  const [activeTab, setActiveTab] = useState<'units' | 'library' | 'notes' | 'course_settings' | '1M' | '2M' | '5M' | '8M'>('units');
+  // Active View Tab: 'units' | 'practical_questions' | 'library' | 'notes' | 'course_settings' | '1M' | '2M' | '5M' | '8M'
+  const [activeTab, setActiveTab] = useState<'units' | 'practical_questions' | 'library' | 'notes' | 'course_settings' | '1M' | '2M' | '5M' | '8M'>('units');
 
   // Modals
   const [isBookManagerOpen, setIsBookManagerOpen] = useState(false);
@@ -78,46 +87,82 @@ export default function App() {
   const [expandedMarksQuestions, setExpandedMarksQuestions] = useState<Record<string, boolean>>({});
   const [questionToDelete, setQuestionToDelete] = useState<Question | null>(null);
   const [isDeletingQuestion, setIsDeletingQuestion] = useState<boolean>(false);
+  const [isAdminAuthModalOpen, setIsAdminAuthModalOpen] = useState<boolean>(false);
+  const [isAdminDocVerified, setIsAdminDocVerified] = useState<boolean>(false);
+  const [verificationBannerNotice, setVerificationBannerNotice] = useState<string | null>(null);
 
   // Notification for guest mode
   const [showGuestBanner, setShowGuestBanner] = useState<boolean>(true);
 
-  // Determine admin privileges strictly from verified admin account
+  // Determine admin privileges strictly from verified admin email or /admins/{uid} record
   const isVerifiedAdmin = Boolean(
-    currentUser && currentUser.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase()
+    currentUser &&
+      ((currentUser.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase() &&
+        currentUser.emailVerified) ||
+        isAdminDocVerified)
+  );
+  const needsAdminEmailVerification = Boolean(
+    currentUser &&
+      currentUser.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase() &&
+      !currentUser.emailVerified &&
+      !isAdminDocVerified
   );
   const isAdmin = isVerifiedAdmin && !studentPreview;
 
   // Auth Listener
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    let active = true;
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (!active) return;
       setCurrentUser(user);
+      setVerificationBannerNotice(null);
+
       if (user) {
         setShowGuestBanner(false);
-        if (user.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase()) {
+        let adminDocExists = false;
+        try {
+          const adminSnap = await getDoc(doc(db, 'admins', user.uid));
+          adminDocExists = adminSnap.exists();
+        } catch {
+          adminDocExists = false;
+        }
+        if (!active) return;
+        setIsAdminDocVerified(adminDocExists);
+
+        if (
+          (user.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase() && user.emailVerified) ||
+          adminDocExists
+        ) {
           setStudentPreview(false);
         }
       } else {
+        setIsAdminDocVerified(false);
         setStudentPreview(false);
       }
     });
-    return () => unsubscribe();
+    return () => {
+      active = false;
+      unsubscribe();
+    };
   }, []);
 
   // Firestore Real-Time Subscriptions
   useEffect(() => {
     const unsubCourses = subscribeCourses(
       (firestoreCourses) => {
+        setCoursesLoaded(true);
         if (firestoreCourses.length > 0 || auth.currentUser) {
           setCourses(firestoreCourses);
           setSelectedCourse((prev) => {
-            if (firestoreCourses.length === 0) return null;
-            if (!prev) return firestoreCourses[0];
-            return firestoreCourses.find((c) => c.id === prev.id) || firestoreCourses[0];
+            if (!prev) return null;
+            return firestoreCourses.find((c) => c.id === prev.id) || null;
           });
         }
       },
-      (err) => console.log('Courses listener status:', err?.message)
+      (err) => {
+        setCoursesLoaded(true);
+        console.log('Courses listener status:', err?.message);
+      }
     );
 
     const unsubUnits = subscribeUnits(
@@ -182,6 +227,14 @@ export default function App() {
     ? wordNotes.filter((n) => n.courseId === selectedCourse.id || n.courseId === 'general')
     : wordNotes;
 
+  const isPracticalCourse = selectedCourse?.paperType === 'practical';
+
+  const handleSelectCourse = (course: Course) => {
+    setSelectedCourse(course);
+    setSelectedUnit(null);
+    setActiveTab(course.paperType === 'practical' ? 'practical_questions' : 'units');
+  };
+
   const getQuestionsByMarkTab = (tab: '1M' | '2M' | '5M' | '8M') => {
     const targetSectionMap: Record<'1M' | '2M' | '5M' | '8M', string> = {
       '1M': 'Group A',
@@ -229,7 +282,8 @@ export default function App() {
   // Handlers for Course Management
   const handleSaveCourse = async (
     courseData: Course,
-    initialUnits?: Array<Omit<Unit, 'id' | 'createdAt'>>
+    initialUnits?: Array<Omit<Unit, 'id' | 'createdAt'>>,
+    initialPracticalQuestions?: ExtractedPracticalQuestion[]
   ) => {
     // 1. Optimistic local update so UI reflects the new course immediately
     const finalizedCourse: Course = {
@@ -247,8 +301,9 @@ export default function App() {
       return [finalizedCourse, ...prev];
     });
     setSelectedCourse(finalizedCourse);
+    setActiveTab(finalizedCourse.paperType === 'practical' ? 'practical_questions' : 'units');
 
-    // If units were parsed, update locally
+    // If units were parsed (Theory paper), update locally & persist
     if (initialUnits && initialUnits.length > 0) {
       const createdUnits: Unit[] = initialUnits.map((u) => ({
         id: `unit-${finalizedCourse.id}-${u.unitNumber}-${Date.now().toString(36)}`,
@@ -258,13 +313,48 @@ export default function App() {
       }));
       setUnits((prev) => [...prev, ...createdUnits]);
 
-      // If user is authenticated, persist to Firestore
       if (currentUser) {
         for (const unitObj of createdUnits) {
           try {
             await createOrUpdateUnit(unitObj);
           } catch (err) {
             console.warn('Firestore unit write notice:', err);
+          }
+        }
+      }
+    }
+
+    // If practical questions were extracted during creation, create and persist them
+    if (initialPracticalQuestions && initialPracticalQuestions.length > 0) {
+      const authorId = currentUser?.uid || 'guest-admin';
+      const authorName =
+        currentUser?.displayName ||
+        (currentUser?.email ? currentUser.email.split('@')[0] : 'Course Admin');
+      const nowMs = Date.now();
+      const createdQuestions: Question[] = initialPracticalQuestions.map((item, idx) => ({
+        id: `q-${nowMs.toString(36)}-${idx}-${Math.random().toString(36).slice(2, 6)}`,
+        courseId: finalizedCourse.id,
+        unitId: '',
+        questionNumber: item.questionNumber || idx + 1,
+        question: item.question.trim(),
+        answer: (item.answer || '').trim(),
+        marks: 0,
+        section: 'Practical',
+        isAnswered: Boolean(item.answer && item.answer.trim()),
+        askedBy: authorId,
+        askedByName: authorName,
+        answeredBy: authorName,
+        createdAt: new Date(nowMs + idx).toISOString(),
+      }));
+
+      setQuestions((prev) => [...createdQuestions, ...prev]);
+
+      if (currentUser) {
+        for (const qObj of createdQuestions) {
+          try {
+            await createQuestion(qObj);
+          } catch (err) {
+            console.warn('Firestore practical question write notice:', err);
           }
         }
       }
@@ -357,6 +447,18 @@ export default function App() {
     }
   };
 
+  const handleUpdateQuestion = async (updatedQ: Question) => {
+    if (!isAdmin) return;
+    setQuestions((prev) => prev.map((q) => (q.id === updatedQ.id ? updatedQ : q)));
+    if (currentUser) {
+      try {
+        await updateQuestion(updatedQ);
+      } catch (err) {
+        console.warn('Firestore question update notice:', err);
+      }
+    }
+  };
+
   // Handlers for Word Notes (Admin MS Word -> Auto-PDF for Users)
   const handleSaveWordNote = async (noteDoc: WordNoteDocument) => {
     setWordNotes((prev) => {
@@ -425,9 +527,11 @@ export default function App() {
       <Header
         courses={courses}
         selectedCourse={selectedCourse}
-        onSelectCourse={(c) => {
-          setSelectedCourse(c);
+        onSelectCourse={handleSelectCourse}
+        onGoHome={() => {
+          setSelectedCourse(null);
           setSelectedUnit(null);
+          setActiveTab('units');
         }}
         currentUser={currentUser}
         isAdmin={isAdmin}
@@ -437,6 +541,7 @@ export default function App() {
             setStudentPreview((prev) => !prev);
           }
         }}
+        onOpenAdminLogin={() => setIsAdminAuthModalOpen(true)}
         onOpenNewCourse={() => {
           setCourseToEdit(null);
           setIsCourseEditorOpen(true);
@@ -444,17 +549,81 @@ export default function App() {
         onOpenBookManager={() => setIsBookManagerOpen(true)}
       />
 
-      {/* Guest Sign-In Notice Banner */}
-      {!currentUser && showGuestBanner && (
-        <div className="bg-amber-500/10 border-b border-amber-500/20 px-4 py-2.5 text-xs text-amber-900">
-          <div className="max-w-7xl mx-auto flex items-center justify-between">
+      {/* Admin Email Verification Notice Banner (when signed in via Email/Password before verifying email) */}
+      {needsAdminEmailVerification && currentUser && (
+        <div className="bg-amber-500/15 border-b border-amber-500/30 px-4 py-2.5 text-xs text-amber-950">
+          <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <AlertCircle className="w-4 h-4 text-amber-700 shrink-0" />
               <span>
-                <strong>Exploring in Guest Mode:</strong> Reference books, questions, and syllabus notes are fully functional. Sign in with Google to synchronize additions permanently with the Firestore database.
+                <strong>Verify Admin Email Required:</strong> Signed in as{' '}
+                <span className="font-mono font-semibold">{currentUser.email}</span>. Verify your email address (or sign in via Google) to unlock Firestore admin saves.
+                {verificationBannerNotice && (
+                  <span className="ml-2 font-semibold text-emerald-800">{verificationBannerNotice}</span>
+                )}
               </span>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-3 shrink-0">
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    await sendEmailVerification(currentUser);
+                    setVerificationBannerNotice('Verification email sent!');
+                  } catch (err: any) {
+                    setVerificationBannerNotice(err?.message || 'Could not send email.');
+                  }
+                }}
+                className="font-semibold text-amber-900 underline hover:text-amber-950"
+              >
+                Resend Verification Email
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    await currentUser.reload();
+                    await currentUser.getIdToken(true);
+                    if (auth.currentUser?.emailVerified) {
+                      setVerificationBannerNotice(null);
+                      setStudentPreview(false);
+                      // Trigger re-render while keeping the genuine Firebase User instance
+                      setCurrentUser(auth.currentUser);
+                    } else {
+                      setVerificationBannerNotice('Not verified yet—check your inbox and click the verification link.');
+                    }
+                  } catch (err: any) {
+                    setVerificationBannerNotice(err?.message || 'Could not refresh status.');
+                  }
+                }}
+                className="font-semibold text-stone-800 underline hover:text-stone-950"
+              >
+                Refresh Status
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Guest Sign-In Notice Banner */}
+      {!currentUser && showGuestBanner && (
+        <div className="bg-amber-500/10 border-b border-amber-500/20 px-4 py-2.5 text-xs text-amber-900">
+          <div className="max-w-7xl mx-auto flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-amber-700 shrink-0" />
+              <span>
+                <strong>Exploring in Guest Mode:</strong> Reference books, questions, and syllabus notes are fully functional. Sign in to synchronize additions permanently with Firestore.
+              </span>
+            </div>
+            <div className="flex items-center gap-3 shrink-0">
+              <button
+                type="button"
+                onClick={() => setIsAdminAuthModalOpen(true)}
+                className="font-semibold text-amber-900 underline hover:text-amber-950 flex items-center gap-1"
+              >
+                <KeyRound className="w-3.5 h-3.5" />
+                <span>Admin ID &amp; Password</span>
+              </button>
               <button
                 onClick={handlePromptLogin}
                 className="font-semibold text-amber-800 underline hover:text-amber-950 flex items-center gap-1"
@@ -464,7 +633,7 @@ export default function App() {
               </button>
               <button
                 onClick={() => setShowGuestBanner(false)}
-                className="text-stone-400 hover:text-stone-600 ml-2"
+                className="text-stone-400 hover:text-stone-600 ml-1"
               >
                 ✕
               </button>
@@ -477,6 +646,22 @@ export default function App() {
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {selectedCourse ? (
           <div className="space-y-6">
+            {/* Return to Home Page Link */}
+            <div className="flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedCourse(null);
+                  setSelectedUnit(null);
+                  setActiveTab('units');
+                }}
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-stone-600 hover:text-amber-800 transition-colors"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>All Courses &amp; Papers</span>
+              </button>
+            </div>
+
             {/* Course Overview Banner */}
             <div className="bg-white rounded-2xl border border-stone-200/90 p-6 md:p-8 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6">
               <div className="space-y-2">
@@ -484,6 +669,16 @@ export default function App() {
                   <span className="font-mono text-xs font-bold px-2.5 py-1 rounded bg-amber-100 text-amber-900 border border-amber-200">
                     {selectedCourse.code}
                   </span>
+                  {isPracticalCourse && (
+                    <span className="text-[11px] font-mono font-semibold px-2 py-0.5 rounded bg-stone-900 text-amber-300">
+                      Practical Paper · Question-Wise
+                    </span>
+                  )}
+                  {isPracticalCourse && selectedCourse.programmingLanguage && (
+                    <span className="text-[11px] font-mono font-semibold px-2 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-200">
+                      {selectedCourse.programmingLanguage}
+                    </span>
+                  )}
                   <span className="text-xs text-stone-500 font-medium">
                     {selectedCourse.department || 'Academic Department'} • {selectedCourse.semester || 'Semester'}
                   </span>
@@ -520,17 +715,31 @@ export default function App() {
             {/* Navigation Tabs */}
             <div className="flex items-center justify-between border-b border-stone-200/90 bg-white/70 backdrop-blur rounded-xl px-2 shadow-xs overflow-x-auto">
               <div className="flex items-center gap-1">
-                <button
-                  onClick={() => setActiveTab('units')}
-                  className={`flex items-center gap-2 py-3 px-4 text-xs font-semibold border-b-2 transition-all whitespace-nowrap ${
-                    activeTab === 'units'
-                      ? 'border-amber-600 text-amber-900 font-bold'
-                      : 'border-transparent text-stone-600 hover:text-stone-900'
-                  }`}
-                >
-                  <Layers className="w-4 h-4 text-amber-600" />
-                  <span>Syllabus ({currentUnits.length})</span>
-                </button>
+                {isPracticalCourse ? (
+                  <button
+                    onClick={() => setActiveTab('practical_questions')}
+                    className={`flex items-center gap-2 py-3 px-4 text-xs font-semibold border-b-2 transition-all whitespace-nowrap ${
+                      activeTab === 'practical_questions'
+                        ? 'border-amber-600 text-amber-900 font-bold'
+                        : 'border-transparent text-stone-600 hover:text-stone-900'
+                    }`}
+                  >
+                    <HelpCircle className="w-4 h-4 text-amber-600" />
+                    <span>Questions ({currentQuestions.length})</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => setActiveTab('units')}
+                    className={`flex items-center gap-2 py-3 px-4 text-xs font-semibold border-b-2 transition-all whitespace-nowrap ${
+                      activeTab === 'units'
+                        ? 'border-amber-600 text-amber-900 font-bold'
+                        : 'border-transparent text-stone-600 hover:text-stone-900'
+                    }`}
+                  >
+                    <Layers className="w-4 h-4 text-amber-600" />
+                    <span>Syllabus ({currentUnits.length})</span>
+                  </button>
+                )}
 
                 <button
                   onClick={() => setActiveTab('notes')}
@@ -544,61 +753,65 @@ export default function App() {
                   <span>Notes ({currentWordNotes.length})</span>
                 </button>
 
-                <button
-                  onClick={() => setActiveTab('1M')}
-                  className={`flex items-center gap-1.5 py-3 px-3.5 text-xs font-semibold border-b-2 transition-all whitespace-nowrap ${
-                    activeTab === '1M'
-                      ? 'border-amber-600 text-amber-900 font-bold'
-                      : 'border-transparent text-stone-600 hover:text-stone-900'
-                  }`}
-                >
-                  <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 font-mono text-[10px] font-bold">
-                    1M
-                  </span>
-                  <span>1M ({questions1M.length})</span>
-                </button>
+                {!isPracticalCourse && (
+                  <>
+                    <button
+                      onClick={() => setActiveTab('1M')}
+                      className={`flex items-center gap-1.5 py-3 px-3.5 text-xs font-semibold border-b-2 transition-all whitespace-nowrap ${
+                        activeTab === '1M'
+                          ? 'border-amber-600 text-amber-900 font-bold'
+                          : 'border-transparent text-stone-600 hover:text-stone-900'
+                      }`}
+                    >
+                      <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 font-mono text-[10px] font-bold">
+                        1M
+                      </span>
+                      <span>1M ({questions1M.length})</span>
+                    </button>
 
-                <button
-                  onClick={() => setActiveTab('2M')}
-                  className={`flex items-center gap-1.5 py-3 px-3.5 text-xs font-semibold border-b-2 transition-all whitespace-nowrap ${
-                    activeTab === '2M'
-                      ? 'border-amber-600 text-amber-900 font-bold'
-                      : 'border-transparent text-stone-600 hover:text-stone-900'
-                  }`}
-                >
-                  <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 font-mono text-[10px] font-bold">
-                    2M
-                  </span>
-                  <span>2M ({questions2M.length})</span>
-                </button>
+                    <button
+                      onClick={() => setActiveTab('2M')}
+                      className={`flex items-center gap-1.5 py-3 px-3.5 text-xs font-semibold border-b-2 transition-all whitespace-nowrap ${
+                        activeTab === '2M'
+                          ? 'border-amber-600 text-amber-900 font-bold'
+                          : 'border-transparent text-stone-600 hover:text-stone-900'
+                      }`}
+                    >
+                      <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 font-mono text-[10px] font-bold">
+                        2M
+                      </span>
+                      <span>2M ({questions2M.length})</span>
+                    </button>
 
-                <button
-                  onClick={() => setActiveTab('5M')}
-                  className={`flex items-center gap-1.5 py-3 px-3.5 text-xs font-semibold border-b-2 transition-all whitespace-nowrap ${
-                    activeTab === '5M'
-                      ? 'border-amber-600 text-amber-900 font-bold'
-                      : 'border-transparent text-stone-600 hover:text-stone-900'
-                  }`}
-                >
-                  <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 font-mono text-[10px] font-bold">
-                    5M
-                  </span>
-                  <span>5M ({questions5M.length})</span>
-                </button>
+                    <button
+                      onClick={() => setActiveTab('5M')}
+                      className={`flex items-center gap-1.5 py-3 px-3.5 text-xs font-semibold border-b-2 transition-all whitespace-nowrap ${
+                        activeTab === '5M'
+                          ? 'border-amber-600 text-amber-900 font-bold'
+                          : 'border-transparent text-stone-600 hover:text-stone-900'
+                      }`}
+                    >
+                      <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 font-mono text-[10px] font-bold">
+                        5M
+                      </span>
+                      <span>5M ({questions5M.length})</span>
+                    </button>
 
-                <button
-                  onClick={() => setActiveTab('8M')}
-                  className={`flex items-center gap-1.5 py-3 px-3.5 text-xs font-semibold border-b-2 transition-all whitespace-nowrap ${
-                    activeTab === '8M'
-                      ? 'border-amber-600 text-amber-900 font-bold'
-                      : 'border-transparent text-stone-600 hover:text-stone-900'
-                  }`}
-                >
-                  <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 font-mono text-[10px] font-bold">
-                    8M
-                  </span>
-                  <span>8M ({questions8M.length})</span>
-                </button>
+                    <button
+                      onClick={() => setActiveTab('8M')}
+                      className={`flex items-center gap-1.5 py-3 px-3.5 text-xs font-semibold border-b-2 transition-all whitespace-nowrap ${
+                        activeTab === '8M'
+                          ? 'border-amber-600 text-amber-900 font-bold'
+                          : 'border-transparent text-stone-600 hover:text-stone-900'
+                      }`}
+                    >
+                      <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 font-mono text-[10px] font-bold">
+                        8M
+                      </span>
+                      <span>8M ({questions8M.length})</span>
+                    </button>
+                  </>
+                )}
 
                 <button
                   onClick={() => setActiveTab('library')}
@@ -623,7 +836,20 @@ export default function App() {
             </div>
 
             {/* Tab Views */}
-            {activeTab === 'units' && (
+            {isPracticalCourse && activeTab === 'practical_questions' && (
+              <PracticalQuestionsView
+                course={selectedCourse}
+                questions={currentQuestions}
+                isAdmin={isAdmin}
+                onSaveQuestion={handleSaveQuestion}
+                onUpdateQuestion={handleUpdateQuestion}
+                onRequestDeleteQuestion={(q) => setQuestionToDelete(q)}
+                userId={currentUser?.uid || 'guest-admin'}
+                userName={currentUser?.displayName || (currentUser?.email ? currentUser.email.split('@')[0] : 'Course Admin')}
+              />
+            )}
+
+            {!isPracticalCourse && activeTab === 'units' && (
               <UnitNotesView
                 course={selectedCourse}
                 units={currentUnits}
@@ -662,7 +888,7 @@ export default function App() {
               />
             )}
 
-            {(activeTab === '1M' || activeTab === '2M' || activeTab === '5M' || activeTab === '8M') && (() => {
+            {!isPracticalCourse && (activeTab === '1M' || activeTab === '2M' || activeTab === '5M' || activeTab === '8M') && (() => {
               const markNumberMap: Record<'1M' | '2M' | '5M' | '8M', number> = {
                 '1M': 1,
                 '2M': 2,
@@ -841,108 +1067,48 @@ export default function App() {
               />
             )}
           </div>
-        ) : activeTab === 'notes' ? (
-          <WordNotesTabView
-            course={null}
-            units={[]}
-            wordNotes={wordNotes}
-            isAdmin={isAdmin}
-            onSaveWordNote={handleSaveWordNote}
-            onDeleteWordNote={handleDeleteWordNote}
-            userId={currentUser?.uid || 'guest-admin'}
-            userName={currentUser?.displayName || (currentUser?.email ? currentUser.email.split('@')[0] : 'Course Admin')}
-          />
         ) : (
-          <div className="bg-white rounded-2xl border border-stone-200/90 p-8 sm:p-12 shadow-sm text-center max-w-3xl mx-auto my-6">
-            <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-amber-600 to-amber-400 p-0.5 mx-auto mb-4 shadow-md flex items-center justify-center">
-              <div className="w-full h-full bg-stone-950 rounded-[14px] flex items-center justify-center">
-                <BookOpen className="w-8 h-8 text-amber-400" />
-              </div>
-            </div>
-            <h2 className="text-2xl sm:text-3xl font-serif font-bold text-stone-900 tracking-tight">
-              Welcome to Notes
-            </h2>
-            <p className="text-stone-600 text-sm mt-2 max-w-xl mx-auto leading-relaxed">
-              Your database is clean and ready. Create your first academic course or paper section, paste a syllabus to auto-generate units, and upload reference textbooks to begin.
-            </p>
-
-            {/* Quick 3-step guide */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 my-8 text-left">
-              <div className="p-4 rounded-xl bg-stone-50 border border-stone-200">
-                <div className="text-xs font-mono font-bold text-amber-700 uppercase mb-1">Step 1</div>
-                <div className="font-semibold text-stone-900 text-sm">Add Course & Syllabus</div>
-                <p className="text-[11px] text-stone-500 mt-1">
-                  Input course code, paste curriculum syllabus, and AI automatically splits it into units.
-                </p>
-              </div>
-
-              <div className="p-4 rounded-xl bg-stone-50 border border-stone-200">
-                <div className="text-xs font-mono font-bold text-amber-700 uppercase mb-1">Step 2</div>
-                <div className="font-semibold text-stone-900 text-sm">Upload Reference Books</div>
-                <p className="text-[11px] text-stone-500 mt-1">
-                  Upload text/markdown books, papers, or excerpts to ground notes and Q&A.
-                </p>
-              </div>
-
-              <div className="p-4 rounded-xl bg-stone-50 border border-stone-200">
-                <div className="text-xs font-mono font-bold text-amber-700 uppercase mb-1">Step 3</div>
-                <div className="font-semibold text-stone-900 text-sm">MS Word Notes → Auto-PDF</div>
-                <p className="text-[11px] text-stone-500 mt-1">
-                  Admin writes notes in MS Word Studio; saving auto-converts them to PDF for students.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-              <button
-                onClick={() => {
-                  setCourseToEdit(null);
-                  setIsCourseEditorOpen(true);
-                }}
-                className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-white font-semibold text-sm shadow-md transition-all"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Create Your First Course / Paper</span>
-              </button>
-
-              <button
-                onClick={() => setActiveTab('notes')}
-                className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-[#185abd] hover:bg-blue-700 text-white font-semibold text-sm transition-colors shadow-md"
-              >
-                <FileText className="w-4 h-4" />
-                <span>Open Notes (MS Word → Auto-PDF)</span>
-              </button>
-
-              {isAdmin && (
-                <button
-                  onClick={() => setIsBookManagerOpen(true)}
-                  className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-800 font-semibold text-sm transition-colors border border-stone-200"
-                >
-                  <BookMarked className="w-4 h-4 text-amber-600" />
-                  <span>Open Reference Library</span>
-                </button>
-              )}
-            </div>
-          </div>
+          <HomePage
+            courses={courses}
+            units={units}
+            books={books}
+            questions={questions}
+            wordNotes={wordNotes}
+            userName={currentUser?.displayName || (currentUser?.email ? currentUser.email.split('@')[0] : null)}
+            isAdmin={isAdmin}
+            isLoading={!coursesLoaded}
+            onSelectCourse={(course) => {
+              handleSelectCourse(course);
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+            onCreateCourse={() => {
+              setCourseToEdit(null);
+              setIsCourseEditorOpen(true);
+            }}
+          />
         )}
       </main>
 
       {/* Mobile App Footer Navigation & Install App Tab */}
-      <MobileFooterNav
-        activeTab={activeTab}
-        onSelectTab={(tab) => setActiveTab(tab)}
-        unitsCount={currentUnits.length}
-        booksCount={currentBooks.length}
-        notesCount={currentWordNotes.length}
-        onQuickAddQuestion={
-          selectedCourse && isAdmin
-            ? () => {
-                setAddQuestionDefaultUnitId(selectedUnit?.id || currentUnits[0]?.id);
-                setIsAddQuestionOpen(true);
-              }
-            : undefined
-        }
-      />
+      {selectedCourse && (
+        <MobileFooterNav
+          activeTab={activeTab}
+          onSelectTab={(tab) => setActiveTab(tab)}
+          isPractical={isPracticalCourse}
+          questionsCount={currentQuestions.length}
+          unitsCount={currentUnits.length}
+          booksCount={currentBooks.length}
+          notesCount={currentWordNotes.length}
+          onQuickAddQuestion={
+            selectedCourse && isAdmin
+              ? () => {
+                  setAddQuestionDefaultUnitId(selectedUnit?.id || currentUnits[0]?.id);
+                  setIsAddQuestionOpen(true);
+                }
+              : undefined
+          }
+        />
+      )}
 
       {/* Modals */}
       {isAdmin && isBookManagerOpen && (
@@ -1000,7 +1166,7 @@ export default function App() {
               </div>
               <div className="min-w-0">
                 <h3 className="text-base font-serif font-bold text-stone-900">
-                  Confirm Delete PDF
+                  {questionToDelete.pdfDataUrl ? 'Confirm Delete PDF' : 'Confirm Delete Question'}
                 </h3>
                 <p className="text-xs text-stone-600 mt-1 leading-relaxed">
                   Are you sure you want to permanently delete{' '}
@@ -1035,12 +1201,23 @@ export default function App() {
                 }}
                 className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold shadow-sm transition-colors disabled:opacity-50"
               >
-                {isDeletingQuestion ? 'Deleting...' : 'Delete PDF'}
+                {isDeletingQuestion
+                  ? 'Deleting...'
+                  : questionToDelete.pdfDataUrl
+                  ? 'Delete PDF'
+                  : 'Delete Question'}
               </button>
             </div>
           </div>
         </div>
       )}
+
+      <AdminAuthModal
+        isOpen={isAdminAuthModalOpen}
+        onClose={() => setIsAdminAuthModalOpen(false)}
+        currentUser={currentUser}
+        isVerifiedAdmin={isVerifiedAdmin}
+      />
     </div>
   );
 }

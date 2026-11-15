@@ -6,6 +6,7 @@ import {
   summarizeUploadedBook,
   extractSyllabusFromFile,
   parseBulkQuestions,
+  extractPracticalQuestionsFromFile,
 } from './gemini';
 
 export const apiRouter = Router();
@@ -180,5 +181,30 @@ apiRouter.post('/gemini/parse-bulk-questions', async (req: Request, res: Respons
   } catch (error: any) {
     console.error('API /gemini/parse-bulk-questions error:', error);
     return sendJson(res, 500, { error: error.message || 'Error parsing bulk questions' });
+  }
+});
+
+// Handle extracting practical questions from an uploaded Photo or PDF
+apiRouter.post('/gemini/extract-practical-questions', async (req: Request, res: Response) => {
+  try {
+    const { base64Data, mimeType, fileName, courseCode, courseTitle } = req.body || {};
+    if (!base64Data || !mimeType) {
+      return sendJson(res, 400, { error: 'base64Data and mimeType are required.' });
+    }
+
+    const questions = await extractPracticalQuestionsFromFile({
+      base64Data,
+      mimeType,
+      fileName,
+      courseCode,
+      courseTitle,
+    });
+
+    return sendJson(res, 200, { questions });
+  } catch (error: any) {
+    console.error('API /gemini/extract-practical-questions error:', error);
+    return sendJson(res, 500, {
+      error: error.message || 'Error extracting questions from practical file',
+    });
   }
 });

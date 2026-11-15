@@ -137,6 +137,11 @@ export async function createOrUpdateCourse(course: Course): Promise<void> {
       semester: (course.semester || '').slice(0, 50),
       syllabusText: (course.syllabusText || '').slice(0, 50000),
       answerFormat: (course.answerFormat || 'detailed').slice(0, 100),
+      paperType: course.paperType === 'practical' ? 'practical' : 'theory',
+      programmingLanguage:
+        course.paperType === 'practical'
+          ? (course.programmingLanguage || '').trim().slice(0, 100)
+          : '',
       createdBy: course.createdBy,
       createdAt: course.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -335,11 +340,69 @@ export async function createQuestion(q: Question): Promise<void> {
       askedByName: (q.askedByName || 'Anonymous Student').slice(0, 100),
       createdAt: q.createdAt || new Date().toISOString(),
     };
+    if (typeof q.questionNumber === 'number') {
+      payload.questionNumber = q.questionNumber;
+    }
     if (Array.isArray(q.webSources) && q.webSources.length > 0) {
       payload.webSources = q.webSources.slice(0, 8);
     }
     if (q.pdfDataUrl) {
       if (q.pdfDataUrl.length <= INLINE_DATA_URL_LIMIT) {
+        payload.pdfDataUrl = q.pdfDataUrl;
+      } else {
+        const chunkCount = await saveChunkedData('questions', q.id, q.pdfDataUrl, ownerUid);
+        payload.pdfDataUrl = CHUNKED_PDF_MARKER;
+        payload.pdfChunkCount = chunkCount;
+      }
+    }
+    if (q.pdfFileName) {
+      payload.pdfFileName = q.pdfFileName.slice(0, 255);
+    }
+    if (q.mimeType) {
+      payload.mimeType = q.mimeType.slice(0, 100);
+    }
+    await setDoc(doc(db, 'questions', q.id), payload);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function updateQuestion(q: Question): Promise<void> {
+  const path = `questions/${q.id}`;
+  try {
+    const ownerUid = q.askedBy || auth.currentUser?.uid || 'guest-admin';
+    const payload: any = {
+      courseId: q.courseId,
+      unitId: q.unitId || '',
+      question: q.question.slice(0, 2000),
+      answer: q.answer.slice(0, 50000),
+      marks: typeof q.marks === 'number' ? q.marks : 0,
+      section: (q.section || 'Practical').slice(0, 50),
+      answerFormat: (q.answerFormat || 'detailed').slice(0, 100),
+      isCurated: Boolean(q.isCurated),
+      thinkingUsed: Boolean(q.thinkingUsed),
+      groundedInSearch: Boolean(q.groundedInSearch),
+      modelUsed: (q.modelUsed || 'manual-admin').slice(0, 100),
+      sourceBooks: (q.sourceBooks || '').slice(0, 1000),
+      askedBy: ownerUid,
+      askedByName: (q.askedByName || 'Course Admin').slice(0, 100),
+      createdAt: q.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    if (typeof q.questionNumber === 'number') {
+      payload.questionNumber = q.questionNumber;
+    }
+    if (Array.isArray(q.webSources) && q.webSources.length > 0) {
+      payload.webSources = q.webSources.slice(0, 8);
+    }
+    if (q.pdfDataUrl) {
+      if (q.pdfDataUrl === CHUNKED_PDF_MARKER) {
+        payload.pdfDataUrl = CHUNKED_PDF_MARKER;
+        if (typeof q.pdfChunkCount === 'number') {
+          payload.pdfChunkCount = q.pdfChunkCount;
+        }
+      } else if (q.pdfDataUrl.length <= INLINE_DATA_URL_LIMIT) {
+        await deleteChunks('questions', q.id);
         payload.pdfDataUrl = q.pdfDataUrl;
       } else {
         const chunkCount = await saveChunkedData('questions', q.id, q.pdfDataUrl, ownerUid);

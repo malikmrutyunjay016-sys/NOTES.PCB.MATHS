@@ -13,20 +13,23 @@ import {
   Menu,
   X,
   ChevronDown,
+  Home,
+  KeyRound,
 } from 'lucide-react';
 import { User, signInWithPopup, signOut } from 'firebase/auth';
 import { auth, googleProvider } from '../lib/firebase';
 import { Course } from '../types';
-import { ADMIN_EMAIL } from '../lib/dataService';
 
 interface HeaderProps {
   courses: Course[];
   selectedCourse: Course | null;
   onSelectCourse: (course: Course) => void;
+  onGoHome?: () => void;
   currentUser: User | null;
   isAdmin: boolean;
   canToggleAdmin?: boolean;
   onToggleDemoAdmin: () => void;
+  onOpenAdminLogin: () => void;
   onOpenNewCourse: () => void;
   onOpenBookManager: () => void;
   onDownloadCourseDossier?: () => void;
@@ -36,10 +39,12 @@ export const Header: React.FC<HeaderProps> = ({
   courses,
   selectedCourse,
   onSelectCourse,
+  onGoHome,
   currentUser,
   isAdmin,
   canToggleAdmin = false,
   onToggleDemoAdmin,
+  onOpenAdminLogin,
   onOpenNewCourse,
   onOpenBookManager,
   onDownloadCourseDossier,
@@ -72,8 +77,16 @@ export const Header: React.FC<HeaderProps> = ({
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           {/* Brand Logo & Name */}
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-600 via-amber-500 to-yellow-400 p-0.5 shadow-md flex items-center justify-center">
+          <button
+            type="button"
+            onClick={() => {
+              setCourseDropdownOpen(false);
+              onGoHome?.();
+            }}
+            className="flex items-center gap-3 text-left hover:opacity-90 transition-opacity focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 rounded-xl"
+            title="Go to Home Page"
+          >
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-600 via-amber-500 to-yellow-400 p-0.5 shadow-md flex items-center justify-center shrink-0">
               <div className="w-full h-full bg-stone-950 rounded-[10px] flex items-center justify-center">
                 <BookOpen className="w-5 h-5 text-amber-400" />
               </div>
@@ -81,13 +94,10 @@ export const Header: React.FC<HeaderProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <span className="font-serif font-bold text-xl tracking-tight text-stone-50">Notes</span>
-                <span className="text-[10px] font-mono tracking-wider uppercase px-2 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded-full">
-                  Academic AI
-                </span>
               </div>
-              <p className="text-[11px] text-stone-400 hidden sm:block">Reference-Grounded Syllabus Companion</p>
+              <p className="text-[11px] text-stone-400 hidden sm:block">Academic Study Portal</p>
             </div>
-          </div>
+          </button>
 
           {/* Center: Course Selector */}
           <div className="relative hidden md:block">
@@ -99,7 +109,7 @@ export const Header: React.FC<HeaderProps> = ({
               <div className="text-left">
                 <span className="text-xs text-stone-400 block font-normal">Active Course/Paper</span>
                 <span className="text-stone-100 font-semibold truncate max-w-[220px] block">
-                  {selectedCourse ? `${selectedCourse.code}: ${selectedCourse.title}` : courses.length === 0 ? 'No courses yet' : 'Select a course'}
+                  {selectedCourse ? `${selectedCourse.code}: ${selectedCourse.title}` : courses.length === 0 ? 'No courses yet' : 'All Courses (Home)'}
                 </span>
               </div>
               <ChevronDown className="w-4 h-4 text-stone-400 ml-1" />
@@ -108,8 +118,25 @@ export const Header: React.FC<HeaderProps> = ({
             {courseDropdownOpen && (
               <div className="absolute left-0 mt-2 w-80 bg-stone-900 border border-stone-700 rounded-xl shadow-2xl py-2 z-50">
                 <div className="px-3 py-1.5 text-xs font-mono uppercase text-stone-400 border-b border-stone-800">
-                  Enrolled Courses & Papers
+                  Available Courses & Papers
                 </div>
+                {onGoHome && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onGoHome();
+                      setCourseDropdownOpen(false);
+                    }}
+                    className={`w-full text-left px-3.5 py-2 text-xs flex items-center gap-2 border-b border-stone-800 transition-colors ${
+                      !selectedCourse
+                        ? 'bg-amber-500/20 text-amber-300 font-semibold'
+                        : 'text-stone-200 hover:bg-stone-800'
+                    }`}
+                  >
+                    <Home className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                    <span>Home — All Courses &amp; Papers</span>
+                  </button>
+                )}
                 <div className="max-h-64 overflow-y-auto py-1">
                   {courses.length === 0 ? (
                     <div className="px-4 py-5 text-center text-stone-400 text-xs">
@@ -182,23 +209,34 @@ export const Header: React.FC<HeaderProps> = ({
               </button>
             )}
 
-            {/* Admin Role Toggle (only visible to verified admin for Student View preview) */}
+            {/* Admin Role Toggle & Password Setup (visible to verified admin) */}
             {canToggleAdmin && (
-              <button
-                onClick={onToggleDemoAdmin}
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                  isAdmin
-                    ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-                    : 'bg-stone-800/80 text-stone-400 border-stone-700 hover:text-stone-200'
-                }`}
-                title="Toggle between Admin Mode and Student View"
-              >
-                <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
-                <span>{isAdmin ? 'Admin Mode' : 'Student View'}</span>
-              </button>
+              <>
+                <button
+                  onClick={onToggleDemoAdmin}
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                    isAdmin
+                      ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                      : 'bg-stone-800/80 text-stone-400 border-stone-700 hover:text-stone-200'
+                  }`}
+                  title="Toggle between Admin Mode and Student View"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
+                  <span>{isAdmin ? 'Admin Mode' : 'Student View'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={onOpenAdminLogin}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-200 text-xs font-medium border border-stone-700 transition-colors"
+                  title="Create or update Admin ID & password"
+                >
+                  <KeyRound className="w-3.5 h-3.5 text-amber-400" />
+                  <span className="hidden xl:inline">Admin Password</span>
+                </button>
+              </>
             )}
 
-            {/* User Auth Info / Google Sign In */}
+            {/* User Auth Info / Admin ID & Google Sign In */}
             {currentUser ? (
               <div className="flex items-center gap-2 pl-2 border-l border-stone-800">
                 {currentUser.photoURL ? (
@@ -217,7 +255,7 @@ export const Header: React.FC<HeaderProps> = ({
                     {currentUser.displayName || currentUser.email?.split('@')[0]}
                   </div>
                   <div className="text-[10px] text-stone-400 font-mono truncate max-w-[120px]">
-                    {currentUser.email === ADMIN_EMAIL ? 'Verified Admin' : 'Student'}
+                    {canToggleAdmin ? 'Verified Admin' : 'Student'}
                   </div>
                 </div>
                 <button
@@ -229,14 +267,25 @@ export const Header: React.FC<HeaderProps> = ({
                 </button>
               </div>
             ) : (
-              <button
-                onClick={handleSignIn}
-                disabled={authLoading}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-white text-xs font-semibold shadow-md transition-all disabled:opacity-50"
-              >
-                <LogIn className="w-3.5 h-3.5" />
-                <span>{authLoading ? 'Signing In...' : 'Google Sign In'}</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={onOpenAdminLogin}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-amber-300 text-xs font-semibold border border-amber-500/30 transition-colors"
+                  title="Sign in with Admin ID & Password"
+                >
+                  <KeyRound className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Admin ID Login</span>
+                </button>
+                <button
+                  onClick={handleSignIn}
+                  disabled={authLoading}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-white text-xs font-semibold shadow-md transition-all disabled:opacity-50"
+                >
+                  <LogIn className="w-3.5 h-3.5" />
+                  <span>{authLoading ? 'Signing In...' : 'Google Sign In'}</span>
+                </button>
+              </div>
             )}
           </div>
 
@@ -266,11 +315,29 @@ export const Header: React.FC<HeaderProps> = ({
       {/* Mobile Drawer */}
       {mobileMenuOpen && (
         <div className="lg:hidden bg-stone-900 border-b border-stone-800 px-4 py-4 space-y-4">
+          {onGoHome && (
+            <button
+              type="button"
+              onClick={() => {
+                onGoHome();
+                setMobileMenuOpen(false);
+              }}
+              className="w-full flex items-center gap-2 py-2 px-3 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-200 text-xs font-medium border border-stone-700"
+            >
+              <Home className="w-3.5 h-3.5 text-amber-400" />
+              <span>Home — All Courses &amp; Papers</span>
+            </button>
+          )}
           <div>
             <label className="text-xs font-mono text-stone-400 uppercase block mb-1">Select Course / Paper</label>
             <select
               value={selectedCourse?.id || ''}
               onChange={(e) => {
+                if (!e.target.value) {
+                  onGoHome?.();
+                  setMobileMenuOpen(false);
+                  return;
+                }
                 const found = courses.find((c) => c.id === e.target.value);
                 if (found) {
                   onSelectCourse(found);
@@ -279,6 +346,7 @@ export const Header: React.FC<HeaderProps> = ({
               }}
               className="w-full bg-stone-800 border border-stone-700 rounded-lg p-2.5 text-sm text-stone-200"
             >
+              <option value="">All Courses (Home Page)</option>
               {courses.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.code}: {c.title}
@@ -328,29 +396,57 @@ export const Header: React.FC<HeaderProps> = ({
             )}
           </div>
 
-          <div className="pt-2 border-t border-stone-800 flex items-center justify-between">
+          <div className="pt-2 border-t border-stone-800 space-y-2">
             {currentUser ? (
-              <div className="flex items-center justify-between w-full">
-                <div className="flex items-center gap-2">
-                  <UserIcon className="w-4 h-4 text-amber-400" />
-                  <span className="text-xs text-stone-300">{currentUser.email}</span>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between w-full">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <UserIcon className="w-4 h-4 text-amber-400 shrink-0" />
+                    <span className="text-xs text-stone-300 truncate">{currentUser.email}</span>
+                  </div>
+                  <button
+                    onClick={handleSignOut}
+                    className="text-xs text-rose-400 hover:text-rose-300 flex items-center gap-1 shrink-0"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    <span>Sign out</span>
+                  </button>
                 </div>
-                <button
-                  onClick={handleSignOut}
-                  className="text-xs text-rose-400 hover:text-rose-300 flex items-center gap-1"
-                >
-                  <LogOut className="w-3.5 h-3.5" />
-                  <span>Sign out</span>
-                </button>
+                {canToggleAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMobileMenuOpen(false);
+                      onOpenAdminLogin();
+                    }}
+                    className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-stone-800 text-amber-300 text-xs font-medium border border-amber-500/30"
+                  >
+                    <KeyRound className="w-3.5 h-3.5" />
+                    <span>Set / Update Admin Password</span>
+                  </button>
+                )}
               </div>
             ) : (
-              <button
-                onClick={handleSignIn}
-                className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-amber-600 text-white text-xs font-medium"
-              >
-                <LogIn className="w-3.5 h-3.5" />
-                <span>Sign in with Google</span>
-              </button>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    onOpenAdminLogin();
+                  }}
+                  className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-stone-800 text-amber-300 text-xs font-medium border border-amber-500/30"
+                >
+                  <KeyRound className="w-3.5 h-3.5" />
+                  <span>Admin ID Login</span>
+                </button>
+                <button
+                  onClick={handleSignIn}
+                  className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-amber-600 text-white text-xs font-medium"
+                >
+                  <LogIn className="w-3.5 h-3.5" />
+                  <span>Google Sign In</span>
+                </button>
+              </div>
             )}
           </div>
         </div>

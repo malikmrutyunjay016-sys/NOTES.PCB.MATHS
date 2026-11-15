@@ -13,14 +13,25 @@ import {
   FileUp,
   Loader2,
   FileCheck,
+  HelpCircle,
+  Trash2,
+  Code2,
 } from 'lucide-react';
 import { Course, Unit, ANSWER_FORMATS } from '../types';
+import {
+  ExtractedPracticalQuestion,
+  extractPracticalQuestionsFromUpload,
+} from '../lib/practicalExtraction';
 
 interface CourseEditorModalProps {
   isOpen: boolean;
   onClose: () => void;
   courseToEdit?: Course | null;
-  onSaveCourse: (course: Course, initialUnits?: Array<Omit<Unit, 'id' | 'createdAt'>>) => Promise<void>;
+  onSaveCourse: (
+    course: Course,
+    initialUnits?: Array<Omit<Unit, 'id' | 'createdAt'>>,
+    initialPracticalQuestions?: ExtractedPracticalQuestion[]
+  ) => Promise<void>;
   userId: string;
 }
 
@@ -36,14 +47,21 @@ export const CourseEditorModal: React.FC<CourseEditorModalProps> = ({
   const [department, setDepartment] = useState(courseToEdit?.department || '');
   const [semester, setSemester] = useState(courseToEdit?.semester || '');
   const [description, setDescription] = useState(courseToEdit?.description || '');
+  const [paperType, setPaperType] = useState<'theory' | 'practical'>(courseToEdit?.paperType || 'theory');
+  const [programmingLanguage, setProgrammingLanguage] = useState(courseToEdit?.programmingLanguage || '');
   const [answerFormat, setAnswerFormat] = useState(courseToEdit?.answerFormat || 'detailed');
   const [syllabusText, setSyllabusText] = useState(courseToEdit?.syllabusText || '');
 
-  // File extraction state for PDF / Photo / Text
+  // File extraction state for PDF / Photo / Text (Theory Syllabus)
   const [isExtractingSyllabus, setIsExtractingSyllabus] = useState(false);
   const [syllabusFileName, setSyllabusFileName] = useState('');
   const [extractionMessage, setExtractionMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Practical Paper Photo/PDF Question Extraction state
+  const [isExtractingPractical, setIsExtractingPractical] = useState(false);
+  const [practicalMessage, setPracticalMessage] = useState('');
+  const [extractedPracticalQuestions, setExtractedPracticalQuestions] = useState<ExtractedPracticalQuestion[]>([]);
 
   const [isParsingSyllabus, setIsParsingSyllabus] = useState(false);
   const [parsedUnits, setParsedUnits] = useState<Array<{ unitNumber: number; title: string; topics: string; summary: string }>>([]);
@@ -326,6 +344,31 @@ export const CourseEditorModal: React.FC<CourseEditorModalProps> = ({
     await parseUnitsFromText(syllabusText);
   };
 
+  const handlePracticalFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setErrorMessage(null);
+    setPracticalMessage('');
+    try {
+      setIsExtractingPractical(true);
+      const extracted = await extractPracticalQuestionsFromUpload({
+        file,
+        courseCode: code.trim(),
+        courseTitle: title.trim(),
+      });
+      setExtractedPracticalQuestions(extracted);
+      setPracticalMessage(
+        `Extracted ${extracted.length} practical ${extracted.length === 1 ? 'question' : 'questions'} from "${file.name}". Review or edit below before saving.`
+      );
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Failed to extract practical questions from file.');
+    } finally {
+      setIsExtractingPractical(false);
+      e.target.value = '';
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!code.trim() || !title.trim()) {
@@ -345,23 +388,37 @@ export const CourseEditorModal: React.FC<CourseEditorModalProps> = ({
         department: department.trim(),
         semester: semester.trim(),
         description: description.trim(),
-        syllabusText: syllabusText.trim(),
+        paperType,
+        programmingLanguage: paperType === 'practical' ? programmingLanguage.trim() : '',
+        syllabusText: paperType === 'theory' ? syllabusText.trim() : '',
         answerFormat: answerFormat,
         createdBy: courseToEdit?.createdBy || userId,
         createdAt: courseToEdit?.createdAt || new Date().toISOString(),
       };
 
-      const unitsToCreate = parsedUnits.map((u: any) => ({
-        courseId,
-        unitNumber: u.unitNumber,
-        title: u.title,
-        topics: u.topics,
-        summary: u.summary,
-        notes: u.notes || `# ${u.title}\n\n*Topics:* ${u.topics}\n\n*Overview:* ${u.summary}`,
-        createdBy: userId,
-      }));
+      const unitsToCreate =
+        paperType === 'theory'
+          ? parsedUnits.map((u: any) => ({
+              courseId,
+              unitNumber: u.unitNumber,
+              title: u.title,
+              topics: u.topics,
+              summary: u.summary,
+              notes: u.notes || `# ${u.title}\n\n*Topics:* ${u.topics}\n\n*Overview:* ${u.summary}`,
+              createdBy: userId,
+            }))
+          : [];
 
-      await onSaveCourse(courseObj, unitsToCreate.length > 0 ? unitsToCreate : undefined);
+      const practicalQuestionsToCreate =
+        paperType === 'practical' && extractedPracticalQuestions.length > 0
+          ? extractedPracticalQuestions.filter((item) => item.question.trim().length > 0)
+          : undefined;
+
+      await onSaveCourse(
+        courseObj,
+        unitsToCreate.length > 0 ? unitsToCreate : undefined,
+        practicalQuestionsToCreate
+      );
       onClose();
     } catch (err: any) {
       console.error('Error saving course:', err);
@@ -385,7 +442,7 @@ export const CourseEditorModal: React.FC<CourseEditorModalProps> = ({
                 {courseToEdit ? 'Edit Course / Paper Section' : 'Create New Course / Paper Section'}
               </h2>
               <p className="text-xs text-stone-400">
-                Upload syllabus (PDF/Photo/Text), auto-split units, and configure answer format
+                Choose Theory (Unit-Wise) or Practical (Question-Wise), then upload materials
               </p>
             </div>
           </div>
@@ -484,120 +541,307 @@ export const CourseEditorModal: React.FC<CourseEditorModalProps> = ({
 
 
 
-          {/* Upload Syllabus (PDF / Photo / Text) */}
-          <div className="space-y-3 bg-stone-850 p-4 rounded-xl border border-stone-800">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <div>
-                <label className="text-xs font-mono text-stone-200 uppercase font-semibold flex items-center gap-1.5">
-                  <FileUp className="w-4 h-4 text-amber-400" />
-                  <span>Upload Syllabus (PDF, Photo, or Text)</span>
-                </label>
-                <p className="text-[11px] text-stone-400">
-                  Upload a photo of your syllabus, a university PDF document, or text file. Gemini extracts all text automatically.
-                </p>
-              </div>
-
-              {/* File upload input */}
-              <div>
-                <input
-                  type="file"
-                  id="syllabus-file-input"
-                  accept=".pdf,.png,.jpg,.jpeg,.webp,.txt,.md"
-                  onChange={handleSyllabusFileUpload}
-                  disabled={isExtractingSyllabus}
-                  className="hidden"
-                />
-                <label
-                  htmlFor="syllabus-file-input"
-                  className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600/30 hover:bg-amber-600/40 border border-amber-500/40 text-amber-300 text-xs font-semibold transition-all shadow-sm"
-                >
-                  {isExtractingSyllabus ? (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      <span>Extracting with OCR...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Upload className="w-3.5 h-3.5" />
-                      <span>Upload PDF / Photo / Text</span>
-                    </>
-                  )}
-                </label>
-              </div>
-            </div>
-
-            {/* Status message */}
-            {extractionMessage && (
-              <div className="p-2.5 rounded-lg bg-stone-900 border border-stone-700/80 text-xs flex items-center gap-2 text-amber-300">
-                <FileCheck className="w-4 h-4 text-emerald-400 shrink-0" />
-                <span className="truncate">{extractionMessage}</span>
-              </div>
-            )}
-
-            {/* Syllabus Text Preview / Editing Area */}
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="text-xs font-mono text-stone-300 uppercase">
-                  Extracted Syllabus Content (Editable)
-                </label>
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] font-mono text-stone-400">
-                    {syllabusText.length.toLocaleString()} characters
-                  </span>
-                  <button
-                    type="button"
-                    onClick={handleParseSyllabus}
-                    disabled={isParsingSyllabus || !syllabusText.trim()}
-                    className="px-2.5 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/30 text-amber-300 text-[11px] font-medium transition-colors disabled:opacity-40 flex items-center gap-1"
-                  >
-                    <Sparkles className="w-3 h-3 text-amber-400" />
-                    <span>{isParsingSyllabus ? 'Parsing Units...' : 'Auto-Split into Units'}</span>
-                  </button>
+          {/* Paper Type Selector */}
+          <div className="space-y-2">
+            <label className="block text-xs font-mono text-stone-300 uppercase">
+              Paper Type *
+            </label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setPaperType('theory')}
+                className={`p-3.5 rounded-xl border text-left transition-all flex items-start gap-3 ${
+                  paperType === 'theory'
+                    ? 'bg-amber-500/15 border-amber-500 text-stone-100'
+                    : 'bg-stone-800/60 border-stone-700 text-stone-400 hover:border-stone-600'
+                }`}
+              >
+                <Layers className={`w-4 h-4 mt-0.5 shrink-0 ${paperType === 'theory' ? 'text-amber-400' : 'text-stone-400'}`} />
+                <div>
+                  <div className="text-xs font-semibold text-stone-100">
+                    Theory Paper (Unit-Wise)
+                  </div>
+                  <div className="text-[11px] text-stone-400 mt-0.5">
+                    Organized into Units, Notes, 1M/2M/5M/8M questions &amp; Textbooks
+                  </div>
                 </div>
-              </div>
+              </button>
 
-              <textarea
-                rows={7}
-                placeholder="Upload a PDF/photo above or paste syllabus text containing Unit 1, Unit 2, Unit 3, topics, modules, or chapter descriptions..."
-                value={syllabusText}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setSyllabusText(val);
-                  const instant = tryClientRegexSyllabusParse(val);
-                  if (instant && instant.length >= 2) {
-                    setParsedUnits(instant);
-                    setExtractionMessage(`✓ Instantly extracted ${instant.length} Units from syllabus text!`);
-                  }
-                }}
-                className="w-full bg-stone-900 border border-stone-700 rounded-lg p-3 text-xs font-mono text-stone-200 focus:outline-none focus:border-amber-500 leading-relaxed"
+              <button
+                type="button"
+                onClick={() => setPaperType('practical')}
+                className={`p-3.5 rounded-xl border text-left transition-all flex items-start gap-3 ${
+                  paperType === 'practical'
+                    ? 'bg-amber-500/15 border-amber-500 text-stone-100'
+                    : 'bg-stone-800/60 border-stone-700 text-stone-400 hover:border-stone-600'
+                }`}
+              >
+                <HelpCircle className={`w-4 h-4 mt-0.5 shrink-0 ${paperType === 'practical' ? 'text-amber-400' : 'text-stone-400'}`} />
+                <div>
+                  <div className="text-xs font-semibold text-stone-100">
+                    Practical Paper (Question-Wise)
+                  </div>
+                  <div className="text-[11px] text-stone-400 mt-0.5">
+                    Question-wise view; extract questions from Photo or PDF
+                  </div>
+                </div>
+              </button>
+            </div>
+          </div>
+
+          {paperType === 'practical' && (
+            <div className="space-y-2.5 bg-stone-850 p-4 rounded-xl border border-stone-800">
+              <label className="text-xs font-mono text-stone-200 uppercase font-semibold flex items-center gap-1.5">
+                <Code2 className="w-4 h-4 text-amber-400" />
+                <span>Programming Language</span>
+              </label>
+              <p className="text-[11px] text-stone-400">
+                Choose a preset or enter any programming language used for this practical paper.
+              </p>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {['Python', 'C', 'C++', 'Java', 'JavaScript', 'SQL', 'R', 'MATLAB', 'Bash'].map((lang) => (
+                  <button
+                    key={lang}
+                    type="button"
+                    onClick={() => setProgrammingLanguage(lang)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-mono font-semibold transition-colors whitespace-nowrap shrink-0 border ${
+                      programmingLanguage.trim().toLowerCase() === lang.toLowerCase()
+                        ? 'bg-amber-500/20 border-amber-500 text-amber-300'
+                        : 'bg-stone-900 border-stone-700 text-stone-300 hover:border-stone-500'
+                    }`}
+                  >
+                    {lang}
+                  </button>
+                ))}
+              </div>
+              <input
+                type="text"
+                placeholder="e.g. Python 3, C++, Java, SQL, MATLAB..."
+                value={programmingLanguage}
+                onChange={(e) => setProgrammingLanguage(e.target.value)}
+                className="w-full bg-stone-900 border border-stone-700 rounded-lg p-2.5 text-xs text-stone-100 focus:outline-none focus:border-amber-500"
               />
             </div>
+          )}
 
-            {/* Parsed Units Preview */}
-            {parsedUnits.length > 0 && (
-              <div className="p-3 bg-stone-950/70 rounded-xl border border-stone-800 space-y-2">
-                <div className="flex items-center gap-2 text-xs font-mono text-amber-400 uppercase font-semibold">
-                  <Layers className="w-4 h-4" />
-                  <span>{parsedUnits.length} Units Extracted (Unit I, II, III, IV) — Study Notes Ready</span>
+          {paperType === 'theory' ? (
+            /* Upload Syllabus (PDF / Photo / Text) */
+            <div className="space-y-3 bg-stone-850 p-4 rounded-xl border border-stone-800">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <label className="text-xs font-mono text-stone-200 uppercase font-semibold flex items-center gap-1.5">
+                    <FileUp className="w-4 h-4 text-amber-400" />
+                    <span>Upload Syllabus (PDF, Photo, or Text)</span>
+                  </label>
+                  <p className="text-[11px] text-stone-400">
+                    Upload a photo of your syllabus, a university PDF document, or text file. Gemini extracts all text automatically.
+                  </p>
                 </div>
-                <div className="grid grid-cols-1 gap-2 max-h-44 overflow-y-auto pr-1">
-                  {parsedUnits.map((u: any) => (
-                    <div key={u.unitNumber} className="p-2.5 rounded bg-stone-900 border border-stone-800 text-xs">
-                      <div className="flex items-center justify-between">
-                        <span className="font-semibold text-amber-300">
-                          {u.title.startsWith('Unit') ? u.title : `Unit ${u.romanNumeral || u.unitNumber}: ${u.title}`}
-                        </span>
-                        <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-800/60">
-                          Notes Compiled ✓
-                        </span>
+
+                {/* File upload input */}
+                <div>
+                  <input
+                    type="file"
+                    id="syllabus-file-input"
+                    accept=".pdf,.png,.jpg,.jpeg,.webp,.txt,.md"
+                    onChange={handleSyllabusFileUpload}
+                    disabled={isExtractingSyllabus}
+                    className="hidden"
+                  />
+                  <label
+                    htmlFor="syllabus-file-input"
+                    className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600/30 hover:bg-amber-600/40 border border-amber-500/40 text-amber-300 text-xs font-semibold transition-all shadow-sm"
+                  >
+                    {isExtractingSyllabus ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Extracting with OCR...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="w-3.5 h-3.5" />
+                        <span>Upload PDF / Photo / Text</span>
+                      </>
+                    )}
+                  </label>
+                </div>
+              </div>
+
+              {/* Status message */}
+              {extractionMessage && (
+                <div className="p-2.5 rounded-lg bg-stone-900 border border-stone-700/80 text-xs flex items-center gap-2 text-amber-300">
+                  <FileCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span className="truncate">{extractionMessage}</span>
+                </div>
+              )}
+
+              {/* Syllabus Text Preview / Editing Area */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-mono text-stone-300 uppercase">
+                    Extracted Syllabus Content (Editable)
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-mono text-stone-400">
+                      {syllabusText.length.toLocaleString()} characters
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleParseSyllabus}
+                      disabled={isParsingSyllabus || !syllabusText.trim()}
+                      className="px-2.5 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/30 text-amber-300 text-[11px] font-medium transition-colors disabled:opacity-40 flex items-center gap-1"
+                    >
+                      <Sparkles className="w-3 h-3 text-amber-400" />
+                      <span>{isParsingSyllabus ? 'Parsing Units...' : 'Auto-Split into Units'}</span>
+                    </button>
+                  </div>
+                </div>
+
+                <textarea
+                  rows={7}
+                  placeholder="Upload a PDF/photo above or paste syllabus text containing Unit 1, Unit 2, Unit 3, topics, modules, or chapter descriptions..."
+                  value={syllabusText}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setSyllabusText(val);
+                    const instant = tryClientRegexSyllabusParse(val);
+                    if (instant && instant.length >= 2) {
+                      setParsedUnits(instant);
+                      setExtractionMessage(`✓ Instantly extracted ${instant.length} Units from syllabus text!`);
+                    }
+                  }}
+                  className="w-full bg-stone-900 border border-stone-700 rounded-lg p-3 text-xs font-mono text-stone-200 focus:outline-none focus:border-amber-500 leading-relaxed"
+                />
+              </div>
+
+              {/* Parsed Units Preview */}
+              {parsedUnits.length > 0 && (
+                <div className="p-3 bg-stone-950/70 rounded-xl border border-stone-800 space-y-2">
+                  <div className="flex items-center gap-2 text-xs font-mono text-amber-400 uppercase font-semibold">
+                    <Layers className="w-4 h-4" />
+                    <span>{parsedUnits.length} Units Extracted (Unit I, II, III, IV) — Study Notes Ready</span>
+                  </div>
+                  <div className="grid grid-cols-1 gap-2 max-h-44 overflow-y-auto pr-1">
+                    {parsedUnits.map((u: any) => (
+                      <div key={u.unitNumber} className="p-2.5 rounded bg-stone-900 border border-stone-800 text-xs">
+                        <div className="flex items-center justify-between">
+                          <span className="font-semibold text-amber-300">
+                            {u.title.startsWith('Unit') ? u.title : `Unit ${u.romanNumeral || u.unitNumber}: ${u.title}`}
+                          </span>
+                          <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-800/60">
+                            Notes Compiled ✓
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-stone-400 font-mono mt-1 line-clamp-2">{u.topics}</div>
                       </div>
-                      <div className="text-[11px] text-stone-400 font-mono mt-1 line-clamp-2">{u.topics}</div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            /* Practical Question Paper (Optional Photo / PDF Extraction) */
+            <div className="space-y-3 bg-stone-850 p-4 rounded-xl border border-stone-800">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <label className="text-xs font-mono text-stone-200 uppercase font-semibold flex items-center gap-1.5">
+                    <ImageIcon className="w-4 h-4 text-amber-400" />
+                    <span>Practical Question Paper (Optional Photo / PDF Extraction)</span>
+                  </label>
+                  <p className="text-[11px] text-stone-400 mt-0.5">
+                    Upload a Photo or PDF of the practical manual / question sheet to extract questions now, or add them later inside the Question-Wise view.
+                  </p>
+                </div>
+
+                <div className="shrink-0">
+                  <input
+                    type="file"
+                    id="practical-file-input-modal"
+                    accept=".pdf,.png,.jpg,.jpeg,.webp"
+                    onChange={handlePracticalFileUpload}
+                    disabled={isExtractingPractical}
+                    className="hidden"
+                  />
+                  <label
+                    htmlFor="practical-file-input-modal"
+                    className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600/30 hover:bg-amber-600/40 border border-amber-500/40 text-amber-300 text-xs font-semibold transition-all shadow-sm whitespace-nowrap"
+                  >
+                    {isExtractingPractical ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Extracting Questions...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="w-3.5 h-3.5" />
+                        <span>Upload Photo / PDF</span>
+                      </>
+                    )}
+                  </label>
+                </div>
+              </div>
+
+              {practicalMessage && (
+                <div className="p-2.5 rounded-lg bg-stone-900 border border-stone-700/80 text-xs flex items-center gap-2 text-emerald-300">
+                  <FileCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span>{practicalMessage}</span>
+                </div>
+              )}
+
+              {extractedPracticalQuestions.length > 0 && (
+                <div className="space-y-2.5 max-h-64 overflow-y-auto pr-1">
+                  {extractedPracticalQuestions.map((draft, idx) => (
+                    <div
+                      key={idx}
+                      className="p-3 rounded-xl bg-stone-900 border border-stone-700/80 space-y-2"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[11px] font-mono font-bold text-amber-400">
+                          Question {draft.questionNumber || idx + 1}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setExtractedPracticalQuestions((prev) =>
+                              prev.filter((_, i) => i !== idx)
+                            )
+                          }
+                          className="p-1 rounded text-stone-400 hover:text-rose-400 hover:bg-stone-800 transition-colors"
+                          title="Remove extracted question"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                      <textarea
+                        rows={2}
+                        value={draft.question}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setExtractedPracticalQuestions((prev) =>
+                            prev.map((item, i) => (i === idx ? { ...item, question: value } : item))
+                          );
+                        }}
+                        placeholder="Question statement..."
+                        className="w-full bg-stone-950 border border-stone-700 rounded-lg p-2 text-xs text-stone-100 focus:outline-none focus:border-amber-500"
+                      />
+                      <textarea
+                        rows={2}
+                        value={draft.answer}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setExtractedPracticalQuestions((prev) =>
+                            prev.map((item, i) => (i === idx ? { ...item, answer: value } : item))
+                          );
+                        }}
+                        placeholder="Procedure / solution..."
+                        className="w-full bg-stone-950 border border-stone-700 rounded-lg p-2 text-xs font-mono text-stone-300 focus:outline-none focus:border-amber-500"
+                      />
                     </div>
                   ))}
                 </div>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+          )}
 
           {/* Modal Actions */}
           <div className="flex items-center justify-end gap-3 pt-3 border-t border-stone-800">
@@ -610,11 +854,17 @@ export const CourseEditorModal: React.FC<CourseEditorModalProps> = ({
             </button>
             <button
               type="submit"
-              disabled={isSaving || isExtractingSyllabus}
+              disabled={isSaving || isExtractingSyllabus || isExtractingPractical}
               className="px-5 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold shadow-md transition-all disabled:opacity-50 flex items-center gap-1.5"
             >
               <CheckCircle2 className="w-4 h-4" />
-              <span>{isSaving ? 'Saving Syllabus...' : 'Save Syllabus & Course'}</span>
+              <span>
+                {isSaving
+                  ? 'Saving...'
+                  : paperType === 'practical'
+                  ? 'Save Practical Paper'
+                  : 'Save Syllabus & Course'}
+              </span>
             </button>
           </div>
         </form>

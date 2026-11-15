@@ -2,7 +2,14 @@ import { initializeApp } from 'firebase/app';
 import {
   getAuth,
   GoogleAuthProvider,
+  EmailAuthProvider,
   signInWithPopup,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  linkWithCredential,
+  updatePassword,
+  sendPasswordResetEmail,
+  sendEmailVerification,
   signOut,
   onAuthStateChanged,
   User,
@@ -19,6 +26,19 @@ const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app, (firebaseConfig as any).firestoreDatabaseId);
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
+export {
+  EmailAuthProvider,
+  signInWithPopup,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  linkWithCredential,
+  updatePassword,
+  sendPasswordResetEmail,
+  sendEmailVerification,
+  signOut,
+  onAuthStateChanged,
+};
+export type { User };
 
 export enum OperationType {
   CREATE = 'create',

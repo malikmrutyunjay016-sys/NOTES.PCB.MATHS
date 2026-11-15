@@ -1,4 +1,4 @@
-import { GoogleGenAI, ThinkingLevel } from '@google/genai';
+import { GoogleGenAI, ThinkingLevel, Type } from '@google/genai';
 
 // Initialize the shared server-side Google GenAI client
 const apiKey = process.env.GEMINI_API_KEY || '';
@@ -644,5 +644,88 @@ ${rawText.slice(0, 25000)}`;
   } catch (err: any) {
     console.error('Error parsing bulk questions:', err);
     throw new Error(formatGeminiError(err));
+  }
+}
+
+// Extract practical / lab questions (and procedures/solutions) from an uploaded Photo or PDF
+export async function extractPracticalQuestionsFromFile(params: {
+  base64Data: string;
+  mimeType: string;
+  fileName?: string;
+  courseCode?: string;
+  courseTitle?: string;
+}) {
+  const {
+    base64Data,
+    mimeType,
+    fileName = 'practical-paper',
+    courseCode = '',
+    courseTitle = '',
+  } = params;
+
+  const promptText = `Analyze the attached practical question paper / lab sheet / experiment list ("${fileName}")${
+    courseCode || courseTitle ? ` for the practical course "${courseCode} ${courseTitle}".` : '.'
+  }
+Extract EVERY practical question, lab exercise, program, or experiment from the document or photo in sequential order.
+For each extracted item:
+1. "questionNumber": integer starting at 1 (1, 2, 3...) preserving the document's numbering order.
+2. "question": the complete, exact practical question / experiment aim / problem statement (preserve any sub-parts like (a), (b) or constraints).
+3. "answer": if a solution, algorithm, code, circuit/procedure, or observation table appears in the file, extract it cleanly in GitHub Flavored Markdown; otherwise write a concise, accurate practical solution, algorithm/code, and expected output or procedure in Markdown so students can study it.
+
+If no questions can be identified, return an empty array [].`;
+
+  try {
+    const inlinePart = {
+      inlineData: {
+        mimeType: mimeType || 'application/pdf',
+        data: base64Data,
+      },
+    };
+
+    const response = await callGeminiWithModelFallback((modelName) =>
+      ai.models.generateContent({
+        model: modelName,
+        contents: { parts: [inlinePart, { text: promptText }] },
+        config: {
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                questionNumber: {
+                  type: Type.INTEGER,
+                  description: 'Sequential question number (1, 2, 3...)',
+                },
+                question: {
+                  type: Type.STRING,
+                  description: 'Full practical question or experiment statement extracted from the photo or PDF',
+                },
+                answer: {
+                  type: Type.STRING,
+                  description: 'Extracted or synthesized practical procedure, code, algorithm, or solution in Markdown',
+                },
+              },
+              required: ['questionNumber', 'question', 'answer'],
+            },
+          },
+          thinkingConfig: getFastThinkingConfig(modelName),
+        },
+      })
+    );
+
+    const parsed = JSON.parse((response.text || '[]').trim());
+    if (!Array.isArray(parsed)) return [];
+
+    return parsed
+      .filter((item: any) => item && typeof item.question === 'string' && item.question.trim())
+      .map((item: any, idx: number) => ({
+        questionNumber: Number(item.questionNumber) || idx + 1,
+        question: String(item.question).trim().slice(0, 2000),
+        answer: String(item.answer || 'Solution / procedure pending review.').trim().slice(0, 50000),
+      }));
+  } catch (error: any) {
+    console.error('Error extracting practical questions from file:', error);
+    throw new Error(formatGeminiError(error));
   }
 }
