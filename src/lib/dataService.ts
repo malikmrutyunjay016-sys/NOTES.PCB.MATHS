@@ -13,6 +13,8 @@ import { Course, Unit, Book, Question, WordNoteDocument } from '../types';
 import { CHUNKED_PDF_MARKER } from './pdfUtils';
 
 export const ADMIN_EMAIL = 'malikmrutyunjay016@gmail.com';
+export const ADMIN_LOGIN_ID = 'Admin123';
+export const ADMIN_ID_EMAIL = 'admin123@notes-portal.local';
 
 const INLINE_DATA_URL_LIMIT = 550000;
 const CHUNK_CHAR_SIZE = 550000;
@@ -514,3 +516,38 @@ export async function deleteWordNote(noteId: string): Promise<void> {
   }
 }
 
+export async function registerAdminEntity(
+  uid: string,
+  email: string = ADMIN_ID_EMAIL,
+  role: string = 'admin123'
+): Promise<void> {
+  const path = `admins/${uid}`;
+  try {
+    await setDoc(doc(db, 'admins', uid), {
+      email: email.slice(0, 150),
+      role: role.slice(0, 50),
+      createdAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function getRegisteredAdmin123(): Promise<{ uid: string; email: string } | null> {
+  const path = 'admins';
+  try {
+    const snap = await getDocs(collection(db, 'admins'));
+    for (const docSnap of snap.docs) {
+      const data = docSnap.data() as { email?: string; role?: string };
+      if (
+        data.email?.toLowerCase() === ADMIN_ID_EMAIL.toLowerCase() ||
+        data.role === 'admin123'
+      ) {
+        return { uid: docSnap.id, email: data.email || ADMIN_ID_EMAIL };
+      }
+    }
+    return null;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, path);
+  }
+}

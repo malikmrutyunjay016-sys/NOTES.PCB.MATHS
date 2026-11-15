@@ -19,6 +19,7 @@ import {
 import { User, signInWithPopup, signOut } from 'firebase/auth';
 import { auth, googleProvider } from '../lib/firebase';
 import { Course } from '../types';
+import { ADMIN_ID_EMAIL, ADMIN_LOGIN_ID } from '../lib/dataService';
 
 interface HeaderProps {
   courses: Course[];
@@ -52,6 +53,9 @@ export const Header: React.FC<HeaderProps> = ({
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [courseDropdownOpen, setCourseDropdownOpen] = useState(false);
   const [authLoading, setAuthLoading] = useState(false);
+  const isAdmin123User = Boolean(
+    currentUser && currentUser.email?.toLowerCase() === ADMIN_ID_EMAIL.toLowerCase()
+  );
 
   const handleSignIn = async () => {
     try {
@@ -228,10 +232,16 @@ export const Header: React.FC<HeaderProps> = ({
                   type="button"
                   onClick={onOpenAdminLogin}
                   className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-200 text-xs font-medium border border-stone-700 transition-colors"
-                  title="Create or update Admin ID & password"
+                  title={
+                    isAdmin123User
+                      ? `Update password for ${ADMIN_LOGIN_ID}`
+                      : `Create or manage separate ${ADMIN_LOGIN_ID} entity`
+                  }
                 >
                   <KeyRound className="w-3.5 h-3.5 text-amber-400" />
-                  <span className="hidden xl:inline">Admin Password</span>
+                  <span className="hidden xl:inline">
+                    {isAdmin123User ? `${ADMIN_LOGIN_ID} Password` : `Manage ${ADMIN_LOGIN_ID}`}
+                  </span>
                 </button>
               </>
             )}
@@ -247,15 +257,23 @@ export const Header: React.FC<HeaderProps> = ({
                   />
                 ) : (
                   <div className="w-7 h-7 rounded-full bg-amber-600/30 text-amber-300 flex items-center justify-center text-xs font-bold">
-                    {(currentUser.displayName || currentUser.email || 'U')[0].toUpperCase()}
+                    {isAdmin123User
+                      ? 'A'
+                      : (currentUser.displayName || currentUser.email || 'U')[0].toUpperCase()}
                   </div>
                 )}
                 <div className="text-left hidden xl:block">
                   <div className="text-xs font-medium text-stone-200 truncate max-w-[120px]">
-                    {currentUser.displayName || currentUser.email?.split('@')[0]}
+                    {isAdmin123User
+                      ? ADMIN_LOGIN_ID
+                      : currentUser.displayName || currentUser.email?.split('@')[0]}
                   </div>
                   <div className="text-[10px] text-stone-400 font-mono truncate max-w-[120px]">
-                    {canToggleAdmin ? 'Verified Admin' : 'Student'}
+                    {isAdmin123User
+                      ? 'Admin ID Entity'
+                      : canToggleAdmin
+                      ? 'Mail ID Admin'
+                      : 'Student'}
                   </div>
                 </div>
                 <button
@@ -272,10 +290,10 @@ export const Header: React.FC<HeaderProps> = ({
                   type="button"
                   onClick={onOpenAdminLogin}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-amber-300 text-xs font-semibold border border-amber-500/30 transition-colors"
-                  title="Sign in with Admin ID & Password"
+                  title={`Sign in with separate ${ADMIN_LOGIN_ID} ID & Password`}
                 >
                   <KeyRound className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Admin ID Login</span>
+                  <span>{ADMIN_LOGIN_ID} Login</span>
                 </button>
                 <button
                   onClick={handleSignIn}
@@ -402,7 +420,9 @@ export const Header: React.FC<HeaderProps> = ({
                 <div className="flex items-center justify-between w-full">
                   <div className="flex items-center gap-2 min-w-0">
                     <UserIcon className="w-4 h-4 text-amber-400 shrink-0" />
-                    <span className="text-xs text-stone-300 truncate">{currentUser.email}</span>
+                    <span className="text-xs text-stone-300 truncate">
+                      {isAdmin123User ? `${ADMIN_LOGIN_ID} (Admin Entity)` : currentUser.email}
+                    </span>
                   </div>
                   <button
                     onClick={handleSignOut}
@@ -422,7 +442,9 @@ export const Header: React.FC<HeaderProps> = ({
                     className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-stone-800 text-amber-300 text-xs font-medium border border-amber-500/30"
                   >
                     <KeyRound className="w-3.5 h-3.5" />
-                    <span>Set / Update Admin Password</span>
+                    <span>
+                      {isAdmin123User ? `Update ${ADMIN_LOGIN_ID} Password` : `Manage ${ADMIN_LOGIN_ID} Account`}
+                    </span>
                   </button>
                 )}
               </div>
@@ -437,7 +459,7 @@ export const Header: React.FC<HeaderProps> = ({
                   className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-stone-800 text-amber-300 text-xs font-medium border border-amber-500/30"
                 >
                   <KeyRound className="w-3.5 h-3.5" />
-                  <span>Admin ID Login</span>
+                  <span>{ADMIN_LOGIN_ID} Login</span>
                 </button>
                 <button
                   onClick={handleSignIn}

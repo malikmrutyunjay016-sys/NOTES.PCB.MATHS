@@ -41,6 +41,8 @@ import {
   saveWordNote,
   deleteWordNote,
   ADMIN_EMAIL,
+  ADMIN_ID_EMAIL,
+  ADMIN_LOGIN_ID,
 } from './lib/dataService';
 import { Course, Unit, Book, Question, WordNoteDocument, getSectionForMarks } from './types';
 import { Header } from './components/Header';
@@ -108,6 +110,10 @@ export default function App() {
       !isAdminDocVerified
   );
   const isAdmin = isVerifiedAdmin && !studentPreview;
+  const resolvedUserName =
+    currentUser?.email?.toLowerCase() === ADMIN_ID_EMAIL.toLowerCase()
+      ? ADMIN_LOGIN_ID
+      : currentUser?.displayName || (currentUser?.email ? currentUser.email.split('@')[0] : null);
 
   // Auth Listener
   useEffect(() => {
@@ -327,9 +333,7 @@ export default function App() {
     // If practical questions were extracted during creation, create and persist them
     if (initialPracticalQuestions && initialPracticalQuestions.length > 0) {
       const authorId = currentUser?.uid || 'guest-admin';
-      const authorName =
-        currentUser?.displayName ||
-        (currentUser?.email ? currentUser.email.split('@')[0] : 'Course Admin');
+      const authorName = resolvedUserName || 'Course Admin';
       const nowMs = Date.now();
       const createdQuestions: Question[] = initialPracticalQuestions.map((item, idx) => ({
         id: `q-${nowMs.toString(36)}-${idx}-${Math.random().toString(36).slice(2, 6)}`,
@@ -622,7 +626,7 @@ export default function App() {
                 className="font-semibold text-amber-900 underline hover:text-amber-950 flex items-center gap-1"
               >
                 <KeyRound className="w-3.5 h-3.5" />
-                <span>Admin ID &amp; Password</span>
+                <span>{ADMIN_LOGIN_ID} Login</span>
               </button>
               <button
                 onClick={handlePromptLogin}
@@ -845,7 +849,7 @@ export default function App() {
                 onUpdateQuestion={handleUpdateQuestion}
                 onRequestDeleteQuestion={(q) => setQuestionToDelete(q)}
                 userId={currentUser?.uid || 'guest-admin'}
-                userName={currentUser?.displayName || (currentUser?.email ? currentUser.email.split('@')[0] : 'Course Admin')}
+                userName={resolvedUserName || 'Course Admin'}
               />
             )}
 
@@ -884,7 +888,7 @@ export default function App() {
                     : undefined
                 }
                 userId={currentUser?.uid || 'guest-admin'}
-                userName={currentUser?.displayName || (currentUser?.email ? currentUser.email.split('@')[0] : 'Course Admin')}
+                userName={resolvedUserName || 'Course Admin'}
               />
             )}
 
@@ -1053,7 +1057,7 @@ export default function App() {
                 onSaveWordNote={handleSaveWordNote}
                 onDeleteWordNote={handleDeleteWordNote}
                 userId={currentUser?.uid || 'guest-admin'}
-                userName={currentUser?.displayName || (currentUser?.email ? currentUser.email.split('@')[0] : 'Course Admin')}
+                userName={resolvedUserName || 'Course Admin'}
               />
             )}
 
@@ -1074,7 +1078,7 @@ export default function App() {
             books={books}
             questions={questions}
             wordNotes={wordNotes}
-            userName={currentUser?.displayName || (currentUser?.email ? currentUser.email.split('@')[0] : null)}
+            userName={resolvedUserName}
             isAdmin={isAdmin}
             isLoading={!coursesLoaded}
             onSelectCourse={(course) => {
@@ -1145,7 +1149,7 @@ export default function App() {
           defaultMarks={addQuestionDefaultMarks}
           onSaveQuestion={handleSaveQuestion}
           userId={currentUser?.uid || 'guest-admin'}
-          userName={currentUser?.displayName || (currentUser?.email ? currentUser.email.split('@')[0] : 'Course Admin')}
+          userName={resolvedUserName || 'Course Admin'}
         />
       )}
 

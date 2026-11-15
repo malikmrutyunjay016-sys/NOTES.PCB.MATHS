@@ -1,4 +1,4 @@
-import { initializeApp } from 'firebase/app';
+import { initializeApp, deleteApp } from 'firebase/app';
 import {
   getAuth,
   GoogleAuthProvider,
@@ -26,6 +26,20 @@ const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app, (firebaseConfig as any).firestoreDatabaseId);
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
+
+export async function createSeparateAuthUser(email: string, password: string): Promise<string> {
+  const secondaryApp = initializeApp(firebaseConfig, `admin-provision-${Date.now()}`);
+  const secondaryAuth = getAuth(secondaryApp);
+  try {
+    const cred = await createUserWithEmailAndPassword(secondaryAuth, email, password);
+    const uid = cred.user.uid;
+    await signOut(secondaryAuth).catch(() => {});
+    return uid;
+  } finally {
+    await deleteApp(secondaryApp).catch(() => {});
+  }
+}
+
 export {
   EmailAuthProvider,
   signInWithPopup,
