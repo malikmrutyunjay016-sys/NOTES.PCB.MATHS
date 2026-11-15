@@ -107,6 +107,29 @@ export function dataUrlToBlobUrl(dataUrl: string, fallbackMime = 'application/pd
 }
 
 /**
+ * Determines whether a stored answer document is HTML rather than PDF.
+ */
+export function isHtmlDocument(
+  fileName?: string,
+  mimeType?: string,
+  dataUrl?: string
+): boolean {
+  const mime = (mimeType || '').toLowerCase();
+  if (mime.includes('text/html') || mime.includes('application/xhtml')) {
+    return true;
+  }
+  const name = (fileName || '').toLowerCase();
+  if (name.endsWith('.html') || name.endsWith('.htm')) {
+    return true;
+  }
+  const url = (dataUrl || '').trim().toLowerCase();
+  if (url.startsWith('data:text/html') || url.startsWith('data:application/xhtml')) {
+    return true;
+  }
+  return false;
+}
+
+/**
  * Ensures the downloaded PDF filename ends with .pdf cleanly.
  */
 export function ensurePdfFileName(fileName?: string, fallback = 'Document.pdf'): string {
@@ -117,7 +140,61 @@ export function ensurePdfFileName(fileName?: string, fallback = 'Document.pdf'):
 }
 
 /**
- * Downloads a data URL safely using a Blob URL so large PDFs never fail or corrupt on download.
+ * Ensures the downloaded HTML filename ends with .html or .htm cleanly.
+ */
+export function ensureHtmlFileName(fileName?: string, fallback = 'Document.html'): string {
+  const base = (fileName || '').trim() || fallback;
+  const sanitized = base.replace(/[\\/:*?"<>|]+/g, '_');
+  if (/\.html?$/i.test(sanitized)) return sanitized;
+  return `${sanitized}.html`;
+}
+
+/**
+ * Validates that binary bytes represent readable HTML/text rather than a binary or PDF payload.
+ */
+export function validateHtmlBytes(bytes: Uint8Array): { valid: boolean; reason?: string } {
+  if (!bytes || bytes.length < 5) {
+    return { valid: false, reason: 'The selected HTML file is empty.' };
+  }
+
+  const headStr = new TextDecoder('utf-8', { fatal: false }).decode(bytes.slice(0, 64));
+  if (headStr.includes('%PDF-')) {
+    return {
+      valid: false,
+      reason: 'This file is a PDF, not an HTML document.',
+    };
+  }
+
+  // Reject binary payloads containing null bytes
+  const scanLen = Math.min(bytes.length, 4096);
+  for (let i = 0; i < scanLen; i++) {
+    if (bytes[i] === 0) {
+      return {
+        valid: false,
+        reason: 'The selected file contains binary data and is not a valid HTML file.',
+      };
+    }
+  }
+
+  const decoded = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+  if (!decoded.trim()) {
+    return { valid: false, reason: 'The selected HTML file has no readable content.' };
+  }
+
+  return { valid: true };
+}
+
+/**
+ * Decodes a data URL (base64 or URI-encoded) cleanly into UTF-8 text.
+ */
+export function decodeDataUrlToText(dataUrl: string, fallbackMime = 'text/html'): string {
+  const parsed = parseDataUrlToBytes(dataUrl, fallbackMime);
+  if (!parsed) return '';
+  return new TextDecoder('utf-8', { fatal: false }).decode(parsed.bytes);
+}
+
+/**
+ * Downloads a data URL safely using a Blob URL so large PDFs/HTMLs never fail or corrupt on download.
  */
 export function downloadDataUrlFile(
   filename: string,
@@ -129,8 +206,10 @@ export function downloadDataUrlFile(
     return { ok: false, error: 'Unable to decode file data for download.' };
   }
 
-  const effectiveMime =
-    fallbackMime === 'application/pdf' || /\.pdf$/i.test(filename)
+  const isHtml = isHtmlDocument(filename, fallbackMime, dataUrl) || parsed.mime.toLowerCase().includes('html');
+  const effectiveMime = isHtml
+    ? 'text/html;charset=utf-8'
+    : fallbackMime === 'application/pdf' || /\.pdf$/i.test(filename)
       ? 'application/pdf'
       : parsed.mime || fallbackMime;
 
@@ -143,7 +222,11 @@ export function downloadDataUrlFile(
 
   const blob = new Blob([parsed.bytes.slice().buffer], { type: effectiveMime });
   const blobUrl = URL.createObjectURL(blob);
-  const finalName = effectiveMime === 'application/pdf' ? ensurePdfFileName(filename) : filename;
+  const finalName = isHtml
+    ? ensureHtmlFileName(filename)
+    : effectiveMime === 'application/pdf'
+      ? ensurePdfFileName(filename)
+      : filename;
 
   const link = document.createElement('a');
   link.href = blobUrl;

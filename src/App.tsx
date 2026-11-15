@@ -62,7 +62,7 @@ import { CourseEditorModal } from './components/CourseEditorModal';
 import { AddQuestionModal } from './components/AddQuestionModal';
 import { MobileFooterNav } from './components/MobileFooterNav';
 import { MarkdownView } from './components/MarkdownView';
-import { PdfViewer } from './components/PdfViewer';
+import { AnswerDocumentViewer } from './components/AnswerDocumentViewer';
 import { HomePage } from './components/HomePage';
 import { PracticalQuestionsView } from './components/PracticalQuestionsView';
 import { ExtractedPracticalQuestion } from './lib/practicalExtraction';
@@ -1082,11 +1082,12 @@ export default function App() {
                             {isExpanded && (
                               <div className="p-5 pt-0 border-t border-stone-200/80 bg-white space-y-4">
                                 {q.pdfDataUrl ? (
-                                  <PdfViewer
+                                  <AnswerDocumentViewer
                                     collectionName="questions"
                                     docId={q.id}
                                     inlineDataUrl={q.pdfDataUrl}
                                     fileName={q.pdfFileName}
+                                    mimeType={q.mimeType}
                                   />
                                 ) : (
                                   <>
