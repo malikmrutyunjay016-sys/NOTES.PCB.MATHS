@@ -146,7 +146,7 @@
     },
     "CourseStat": {
       "title": "CourseStat",
-      "description": "Aggregated count of unique visitors who spent more than 5 minutes on a course",
+      "description": "Aggregated count of unique visitors who spent at least 30 seconds on a course",
       "type": "object",
       "properties": {
         "courseId": { "type": "string", "maxLength": 128 },
@@ -158,7 +158,7 @@
     },
     "CourseVisitor": {
       "title": "CourseVisitor",
-      "description": "Deduplicated record for a unique visitor who spent more than 5 minutes on a course",
+      "description": "Deduplicated record for a unique visitor who spent at least 30 seconds on a course",
       "type": "object",
       "properties": {
         "visitorId": { "type": "string", "maxLength": 128 },
@@ -208,7 +208,7 @@
     },
     "/course_stats/{courseId}": {
       "schema": { "$ref": "CourseStat" },
-      "description": "Per-course count of unique visitors spending more than 5 minutes"
+      "description": "Per-course count of unique visitors spending at least 30 seconds"
     },
     "/course_stats/{courseId}/visitors/{visitorId}": {
       "schema": { "$ref": "CourseVisitor" },

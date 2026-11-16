@@ -574,7 +574,7 @@ export async function getRegisteredAdmin123(): Promise<{ uid: string; email: str
   }
 }
 
-// ----------------- COURSE VISITOR STATS (>5 MIN DWELL) -----------------
+// ----------------- COURSE VISITOR STATS (30 SEC DWELL) -----------------
 
 export function subscribeCourseStats(
   onData: (statsMap: Record<string, number>) => void,
@@ -632,7 +632,7 @@ export async function recordQualifiedCourseVisitor(
       tx.set(visitorRef, {
         visitorId,
         courseId,
-        dwellSeconds: Math.max(301, Math.min(864000, Math.round(dwellSeconds))),
+        dwellSeconds: Math.max(30, Math.min(864000, Math.round(dwellSeconds))),
         qualifiedAt: serverTimestamp(),
       });
 

@@ -248,7 +248,7 @@ export default function App() {
     };
   }, []);
 
-  // Track active >5 minute dwell time per unique visitor per course
+  // Track active 30-second dwell time per unique visitor per course
   useEffect(() => {
     if (!selectedCourse?.id) return;
     const courseId = selectedCourse.id;
@@ -1179,7 +1179,7 @@ export default function App() {
         )}
       </main>
 
-      {/* Course Footer Navigation & Unique Visitors (>5 min) */}
+      {/* Course Footer Navigation & Unique Visitors (30s+) */}
       {selectedCourse ? (
         <MobileFooterNav
           activeTab={activeTab}
@@ -1200,7 +1200,7 @@ export default function App() {
           }
         />
       ) : (
-        /* Home Page Footer with Total Unique Visitors (>5 min) Across All Courses */
+        /* Home Page Footer with Total Unique Visitors (30s+) Across All Courses */
         <footer className="mt-auto border-t border-stone-200/90 bg-white/95 backdrop-blur-sm">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-stone-600">
             <div className="font-serif font-semibold text-stone-800">
@@ -1208,7 +1208,7 @@ export default function App() {
             </div>
             <div
               className="flex items-center gap-2 font-mono text-stone-600"
-              title="Sum of unique visitors who spent more than 5 minutes across all courses"
+              title="Sum of unique visitors who spent at least 30 seconds across all courses"
             >
               <Users className="w-3.5 h-3.5 text-amber-700 shrink-0" />
               <span>TOTAL VISITORS:</span>

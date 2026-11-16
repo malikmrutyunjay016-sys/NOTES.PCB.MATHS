@@ -2,8 +2,8 @@ const VISITOR_ID_KEY = 'notes_portal_visitor_id';
 const DWELL_KEY_PREFIX = 'notes_portal_course_dwell_v1_';
 const QUALIFIED_KEY_PREFIX = 'notes_portal_course_qualified_v1_';
 
-// Strictly more than 5 minutes (> 300 seconds)
-export const MIN_QUALIFIED_DWELL_SECONDS = 301;
+// Count unique visit after spending 30 seconds in the course
+export const MIN_QUALIFIED_DWELL_SECONDS = 30;
 
 const memoryDwell = new Map<string, { seconds: number; lastTickMs: number }>();
 const memoryQualified = new Set<string>();

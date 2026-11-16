@@ -86,15 +86,15 @@ export const MobileFooterNav: React.FC<MobileFooterNavProps> = ({
               </button>
             </div>
 
-            {/* Course Unique Visitors (>5 min) & Status */}
+            {/* Course Unique Visitors (30s+) */}
             <div className="flex items-center gap-3 text-[11px] font-mono text-stone-300 shrink-0">
               <div
                 className="flex items-center gap-1.5"
-                title="Unique visitors who visited the site and spent more than 5 minutes in this course"
+                title="Unique visitors who visited the site and spent at least 30 seconds in this course"
               >
                 <Users className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                 <span className="hidden sm:inline text-stone-400">TOTAL COURSE VISITORS:</span>
-                <span className="sm:hidden text-stone-400">&gt;5m:</span>
+                <span className="sm:hidden text-stone-400">VISITORS:</span>
                 <span className="font-bold text-amber-400 tabular-nums">
                   {courseVisitorCount.toLocaleString()}
                 </span>

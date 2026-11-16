@@ -160,7 +160,7 @@ service cloud.firestore {
         data.keys().hasOnly(['visitorId', 'courseId', 'dwellSeconds', 'qualifiedAt']) &&
         data.visitorId is string && data.visitorId == visitorId && isValidId(data.visitorId) &&
         data.courseId is string && data.courseId == courseId && isValidId(data.courseId) &&
-        data.dwellSeconds is int && data.dwellSeconds > 300 && data.dwellSeconds <= 864000 &&
+        data.dwellSeconds is int && data.dwellSeconds >= 30 && data.dwellSeconds <= 864000 &&
         data.qualifiedAt == request.time;
     }
 
@@ -241,7 +241,7 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin() && isValidId(adminId) && isValidAdmin(incoming());
     }
 
-    // Course visitor statistics (>5 minutes dwell time per unique visitor)
+    // Course visitor statistics (30 seconds dwell time per unique visitor)
     match /course_stats/{courseId} {
       allow get, list: if true;
       allow create: if isValidId(courseId) &&
