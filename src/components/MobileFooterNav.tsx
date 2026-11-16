@@ -4,6 +4,7 @@ import {
   BookMarked,
   HelpCircle,
   WifiOff,
+  Users,
 } from 'lucide-react';
 import { usePWAInstall } from '../lib/usePWAInstall';
 
@@ -15,6 +16,7 @@ interface MobileFooterNavProps {
   unitsCount: number;
   booksCount: number;
   notesCount?: number;
+  courseVisitorCount?: number;
   onQuickAddQuestion?: () => void;
 }
 
@@ -25,6 +27,7 @@ export const MobileFooterNav: React.FC<MobileFooterNavProps> = ({
   questionsCount = 0,
   unitsCount,
   booksCount,
+  courseVisitorCount = 0,
 }) => {
   const { isOnline } = usePWAInstall();
 
@@ -83,13 +86,19 @@ export const MobileFooterNav: React.FC<MobileFooterNavProps> = ({
               </button>
             </div>
 
-            {/* Desktop Right Status */}
-            <div className="hidden lg:flex items-center gap-3 text-[11px] font-mono text-stone-400">
-              <span>Notes Mobile PWA</span>
-              <span>•</span>
-              <span className={isOnline ? 'text-emerald-400' : 'text-amber-400'}>
-                {isOnline ? 'Online & Synced' : 'Offline Ready'}
-              </span>
+            {/* Course Unique Visitors (>5 min) & Status */}
+            <div className="flex items-center gap-3 text-[11px] font-mono text-stone-300 shrink-0">
+              <div
+                className="flex items-center gap-1.5"
+                title="Unique visitors who visited the site and spent more than 5 minutes in this course"
+              >
+                <Users className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                <span className="hidden sm:inline text-stone-400">TOTAL COURSE VISITORS:</span>
+                <span className="sm:hidden text-stone-400">&gt;5m:</span>
+                <span className="font-bold text-amber-400 tabular-nums">
+                  {courseVisitorCount.toLocaleString()}
+                </span>
+              </div>
             </div>
           </div>
         </div>
@@ -97,4 +106,3 @@ export const MobileFooterNav: React.FC<MobileFooterNavProps> = ({
     </>
   );
 };
-

@@ -7,6 +7,8 @@ import {
   query,
   getDocs,
   writeBatch,
+  runTransaction,
+  serverTimestamp,
 } from 'firebase/firestore';
 import { auth, db, handleFirestoreError, isQuotaExceededError, OperationType } from './firebase';
 import { Course, Unit, Book, Question, WordNoteDocument } from '../types';
@@ -571,3 +573,93 @@ export async function getRegisteredAdmin123(): Promise<{ uid: string; email: str
     handleFirestoreError(error, OperationType.LIST, path);
   }
 }
+
+// ----------------- COURSE VISITOR STATS (>5 MIN DWELL) -----------------
+
+export function subscribeCourseStats(
+  onData: (statsMap: Record<string, number>) => void,
+  onError?: (err: any) => void
+) {
+  const colPath = 'course_stats';
+  const q = query(collection(db, colPath));
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const map: Record<string, number> = {};
+      snapshot.forEach((d) => {
+        const data = d.data() as { qualifiedVisitorsCount?: number };
+        map[d.id] =
+          typeof data.qualifiedVisitorsCount === 'number' ? data.qualifiedVisitorsCount : 0;
+      });
+      onData(map);
+    },
+    (error) => {
+      onError?.(error);
+      if (isQuotaExceededError(error)) {
+        console.warn(`Firestore quota exceeded while reading ${colPath}.`);
+        return;
+      }
+      try {
+        handleFirestoreError(error, OperationType.GET, colPath);
+      } catch {
+        // Logged via handleFirestoreError
+      }
+    }
+  );
+}
+
+export async function recordQualifiedCourseVisitor(
+  courseId: string,
+  visitorId: string,
+  dwellSeconds: number
+): Promise<'recorded' | 'already_counted' | 'quota_exceeded'> {
+  const visitorPath = `course_stats/${courseId}/visitors/${visitorId}`;
+  try {
+    const result = await runTransaction(db, async (tx) => {
+      const visitorRef = doc(db, 'course_stats', courseId, 'visitors', visitorId);
+      const statRef = doc(db, 'course_stats', courseId);
+
+      const visitorSnap = await tx.get(visitorRef);
+      if (visitorSnap.exists()) {
+        return 'already_counted' as const;
+      }
+
+      const statSnap = await tx.get(statRef);
+      const prevCount = statSnap.exists()
+        ? Number(statSnap.data()?.qualifiedVisitorsCount || 0)
+        : 0;
+
+      tx.set(visitorRef, {
+        visitorId,
+        courseId,
+        dwellSeconds: Math.max(301, Math.min(864000, Math.round(dwellSeconds))),
+        qualifiedAt: serverTimestamp(),
+      });
+
+      if (!statSnap.exists()) {
+        tx.set(statRef, {
+          courseId,
+          qualifiedVisitorsCount: 1,
+          lastVisitorId: visitorId,
+          updatedAt: serverTimestamp(),
+        });
+      } else {
+        tx.update(statRef, {
+          qualifiedVisitorsCount: prevCount + 1,
+          lastVisitorId: visitorId,
+          updatedAt: serverTimestamp(),
+        });
+      }
+
+      return 'recorded' as const;
+    });
+    return result;
+  } catch (error) {
+    if (isQuotaExceededError(error)) {
+      console.warn(`Firestore quota exceeded while recording visitor stat for ${courseId}.`);
+      return 'quota_exceeded';
+    }
+    handleFirestoreError(error, OperationType.WRITE, visitorPath);
+  }
+}
+

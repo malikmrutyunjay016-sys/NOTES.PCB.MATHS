@@ -18,6 +18,7 @@ import {
   ChevronUp,
   Trash2,
   ArrowLeft,
+  Users,
 } from 'lucide-react';
 import { doc, getDoc } from 'firebase/firestore';
 import {
@@ -44,10 +45,20 @@ import {
   deleteQuestion,
   saveWordNote,
   deleteWordNote,
+  subscribeCourseStats,
+  recordQualifiedCourseVisitor,
   ADMIN_EMAIL,
   ADMIN_ID_EMAIL,
   ADMIN_LOGIN_ID,
 } from './lib/dataService';
+import {
+  MIN_QUALIFIED_DWELL_SECONDS,
+  getOrCreateVisitorId,
+  getCourseDwellSeconds,
+  incrementCourseDwellSecond,
+  hasCourseVisitorQualified,
+  markCourseVisitorQualifiedLocally,
+} from './lib/visitorTracking';
 import { Course, Unit, Book, Question, WordNoteDocument, getSectionForMarks } from './types';
 import { Header } from './components/Header';
 import { UnitNotesView } from './components/UnitNotesView';
@@ -74,6 +85,7 @@ export default function App() {
   const [books, setBooks] = useState<Book[]>([]);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [wordNotes, setWordNotes] = useState<WordNoteDocument[]>([]);
+  const [courseVisitorCounts, setCourseVisitorCounts] = useState<Record<string, number>>({});
 
   // Selected Active Course & Unit (starts null so user lands on Home Page)
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
@@ -219,14 +231,81 @@ export default function App() {
       handleSubscriptionError('WordNotes')
     );
 
+    const unsubCourseStats = subscribeCourseStats(
+      (statsMap) => {
+        setCourseVisitorCounts(statsMap);
+      },
+      handleSubscriptionError('CourseStats')
+    );
+
     return () => {
       unsubCourses();
       unsubUnits();
       unsubBooks();
       unsubQuestions();
       unsubWordNotes();
+      unsubCourseStats();
     };
   }, []);
+
+  // Track active >5 minute dwell time per unique visitor per course
+  useEffect(() => {
+    if (!selectedCourse?.id) return;
+    const courseId = selectedCourse.id;
+    const visitorId = getOrCreateVisitorId();
+    let cancelled = false;
+    let inFlight = false;
+    let lastAttemptMs = 0;
+
+    const tryRecordQualification = async (secondsSpent: number) => {
+      if (cancelled || inFlight) return;
+      if (hasCourseVisitorQualified(visitorId, courseId)) return;
+      if (secondsSpent < MIN_QUALIFIED_DWELL_SECONDS) return;
+
+      const now = Date.now();
+      if (now - lastAttemptMs < 30000) return;
+      lastAttemptMs = now;
+
+      inFlight = true;
+      try {
+        const outcome = await recordQualifiedCourseVisitor(courseId, visitorId, secondsSpent);
+        if (cancelled) return;
+        if (outcome === 'recorded' || outcome === 'already_counted') {
+          markCourseVisitorQualifiedLocally(visitorId, courseId);
+        } else if (outcome === 'quota_exceeded') {
+          setFirestoreQuotaExceeded(true);
+        }
+      } catch (err) {
+        console.warn('Course visitor stat notice:', err);
+      } finally {
+        inFlight = false;
+      }
+    };
+
+    const initialSeconds = getCourseDwellSeconds(visitorId, courseId);
+    if (initialSeconds >= MIN_QUALIFIED_DWELL_SECONDS) {
+      void tryRecordQualification(initialSeconds);
+    }
+
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState !== 'visible') return;
+      if (hasCourseVisitorQualified(visitorId, courseId)) return;
+      const updatedSeconds = incrementCourseDwellSecond(visitorId, courseId);
+      if (updatedSeconds >= MIN_QUALIFIED_DWELL_SECONDS) {
+        void tryRecordQualification(updatedSeconds);
+      }
+    }, 1000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [selectedCourse?.id]);
+
+  const totalQualifiedVisitors = courses.reduce(
+    (sum, course) => sum + (courseVisitorCounts[course.id] || 0),
+    0
+  );
 
   // Filter units, books, questions, and wordNotes for current course
   const currentUnits = selectedCourse
@@ -1100,8 +1179,8 @@ export default function App() {
         )}
       </main>
 
-      {/* Mobile App Footer Navigation & Install App Tab */}
-      {selectedCourse && (
+      {/* Course Footer Navigation & Unique Visitors (>5 min) */}
+      {selectedCourse ? (
         <MobileFooterNav
           activeTab={activeTab}
           onSelectTab={(tab) => setActiveTab(tab)}
@@ -1110,6 +1189,7 @@ export default function App() {
           unitsCount={currentUnits.length}
           booksCount={currentBooks.length}
           notesCount={currentWordNotes.length}
+          courseVisitorCount={courseVisitorCounts[selectedCourse.id] || 0}
           onQuickAddQuestion={
             selectedCourse && isAdmin
               ? () => {
@@ -1119,6 +1199,25 @@ export default function App() {
               : undefined
           }
         />
+      ) : (
+        /* Home Page Footer with Total Unique Visitors (>5 min) Across All Courses */
+        <footer className="mt-auto border-t border-stone-200/90 bg-white/95 backdrop-blur-sm">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-stone-600">
+            <div className="font-serif font-semibold text-stone-800">
+              Academic Study Portal
+            </div>
+            <div
+              className="flex items-center gap-2 font-mono text-stone-600"
+              title="Sum of unique visitors who spent more than 5 minutes across all courses"
+            >
+              <Users className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+              <span>TOTAL VISITORS:</span>
+              <span className="font-bold text-amber-800 tabular-nums">
+                {totalQualifiedVisitors.toLocaleString()}
+              </span>
+            </div>
+          </div>
+        </footer>
       )}
 
       {/* Modals */}

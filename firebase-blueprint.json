@@ -143,6 +143,30 @@
         "createdBy": { "type": "string", "maxLength": 128 }
       },
       "required": ["index", "data", "createdBy"]
+    },
+    "CourseStat": {
+      "title": "CourseStat",
+      "description": "Aggregated count of unique visitors who spent more than 5 minutes on a course",
+      "type": "object",
+      "properties": {
+        "courseId": { "type": "string", "maxLength": 128 },
+        "qualifiedVisitorsCount": { "type": "integer" },
+        "lastVisitorId": { "type": "string", "maxLength": 128 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["courseId", "qualifiedVisitorsCount", "lastVisitorId", "updatedAt"]
+    },
+    "CourseVisitor": {
+      "title": "CourseVisitor",
+      "description": "Deduplicated record for a unique visitor who spent more than 5 minutes on a course",
+      "type": "object",
+      "properties": {
+        "visitorId": { "type": "string", "maxLength": 128 },
+        "courseId": { "type": "string", "maxLength": 128 },
+        "dwellSeconds": { "type": "integer" },
+        "qualifiedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["visitorId", "courseId", "dwellSeconds", "qualifiedAt"]
     }
   },
   "firestore": {
@@ -181,6 +205,14 @@
     "/word_notes/{noteId}/chunks/{chunkId}": {
       "schema": { "$ref": "PdfChunk" },
       "description": "Ordered binary data-URL chunks for large WordNote PDFs"
+    },
+    "/course_stats/{courseId}": {
+      "schema": { "$ref": "CourseStat" },
+      "description": "Per-course count of unique visitors spending more than 5 minutes"
+    },
+    "/course_stats/{courseId}/visitors/{visitorId}": {
+      "schema": { "$ref": "CourseVisitor" },
+      "description": "Unique visitor qualification records per course"
     }
   }
 }

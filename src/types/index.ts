@@ -170,3 +170,9 @@ export interface WordNoteDocument {
   updatedAt: string;
 }
 
+export interface CourseStat {
+  courseId: string;
+  qualifiedVisitorsCount: number;
+  lastVisitorId?: string;
+  updatedAt?: string;
+}
