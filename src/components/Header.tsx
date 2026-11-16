@@ -3,7 +3,6 @@ import {
   BookOpen,
   GraduationCap,
   Sparkles,
-  Download,
   LogIn,
   LogOut,
   ShieldCheck,
@@ -33,7 +32,6 @@ interface HeaderProps {
   onOpenAdminLogin: () => void;
   onOpenNewCourse: () => void;
   onOpenBookManager: () => void;
-  onDownloadCourseDossier?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -48,7 +46,6 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenAdminLogin,
   onOpenNewCourse,
   onOpenBookManager,
-  onDownloadCourseDossier,
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [courseDropdownOpen, setCourseDropdownOpen] = useState(false);
@@ -189,18 +186,6 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* Right Header Actions */}
           <div className="hidden lg:flex items-center gap-3">
-            {/* Offline Study Pack Download */}
-            {selectedCourse && (
-              <button
-                onClick={onDownloadCourseDossier}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-200 text-xs font-medium border border-stone-700 transition-colors"
-                title="Download full course study pack for offline viewing"
-              >
-                <Download className="w-3.5 h-3.5 text-amber-400" />
-                <span>Offline Dossier</span>
-              </button>
-            )}
-
             {/* Admin Library Management */}
             {isAdmin && (
               <button
@@ -290,10 +275,10 @@ export const Header: React.FC<HeaderProps> = ({
                   type="button"
                   onClick={onOpenAdminLogin}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-amber-300 text-xs font-semibold border border-amber-500/30 transition-colors"
-                  title={`Sign in with separate ${ADMIN_LOGIN_ID} ID & Password`}
+                  title="Sign in with Admin ID & Password"
                 >
                   <KeyRound className="w-3.5 h-3.5 text-amber-400" />
-                  <span>{ADMIN_LOGIN_ID} Login</span>
+                  <span>Admin Login</span>
                 </button>
                 <button
                   onClick={handleSignIn}
@@ -374,19 +359,6 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
 
           <div className="grid grid-cols-2 gap-2 pt-2 border-t border-stone-800">
-            {selectedCourse && onDownloadCourseDossier && (
-              <button
-                onClick={() => {
-                  onDownloadCourseDossier?.();
-                  setMobileMenuOpen(false);
-                }}
-                className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-stone-800 text-stone-200 text-xs font-medium border border-stone-700"
-              >
-                <Download className="w-3.5 h-3.5 text-amber-400" />
-                <span>Offline Dossier</span>
-              </button>
-            )}
-
             {isAdmin && (
               <button
                 onClick={() => {
@@ -459,7 +431,7 @@ export const Header: React.FC<HeaderProps> = ({
                   className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-stone-800 text-amber-300 text-xs font-medium border border-amber-500/30"
                 >
                   <KeyRound className="w-3.5 h-3.5" />
-                  <span>{ADMIN_LOGIN_ID} Login</span>
+                  <span>Admin Login</span>
                 </button>
                 <button
                   onClick={handleSignIn}

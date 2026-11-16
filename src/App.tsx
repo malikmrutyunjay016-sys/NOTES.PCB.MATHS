@@ -13,25 +13,21 @@ import {
   GraduationCap,
   FileText,
   AlertCircle,
-  LogIn,
   HelpCircle,
   ChevronDown,
   ChevronUp,
   Trash2,
   ArrowLeft,
-  KeyRound,
 } from 'lucide-react';
 import { doc, getDoc } from 'firebase/firestore';
 import {
   auth,
   db,
-  googleProvider,
   sendEmailVerification,
   isQuotaExceededError,
   FIRESTORE_QUOTA_UPGRADE_URL,
   FIRESTORE_PRICING_URL,
 } from './lib/firebase';
-import { signInWithPopup } from 'firebase/auth';
 import {
   subscribeCourses,
   subscribeUnits,
@@ -101,8 +97,7 @@ export default function App() {
   const [isAdminDocVerified, setIsAdminDocVerified] = useState<boolean>(false);
   const [verificationBannerNotice, setVerificationBannerNotice] = useState<string | null>(null);
 
-  // Notification for guest mode & Firestore quota state
-  const [showGuestBanner, setShowGuestBanner] = useState<boolean>(true);
+  // Notification for Firestore quota state
   const [firestoreQuotaExceeded, setFirestoreQuotaExceeded] = useState<boolean>(false);
   const [dismissedQuotaBanner, setDismissedQuotaBanner] = useState<boolean>(false);
 
@@ -134,7 +129,6 @@ export default function App() {
       setVerificationBannerNotice(null);
 
       if (user) {
-        setShowGuestBanner(false);
         let adminDocExists = false;
         try {
           const adminSnap = await getDoc(doc(db, 'admins', user.uid));
@@ -535,14 +529,6 @@ export default function App() {
   };
 
 
-  const handlePromptLogin = async () => {
-    try {
-      await signInWithPopup(auth, googleProvider);
-    } catch (err: any) {
-      console.warn('Login notice:', err?.message);
-    }
-  };
-
   return (
     <div className="min-h-screen bg-stone-100/70 text-stone-900 flex flex-col font-sans">
       {/* Top Navigation */}
@@ -621,43 +607,6 @@ export default function App() {
                 className="font-semibold text-stone-800 underline hover:text-stone-950"
               >
                 Refresh Status
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Guest Sign-In Notice Banner */}
-      {!currentUser && showGuestBanner && (
-        <div className="bg-amber-500/10 border-b border-amber-500/20 px-4 py-2.5 text-xs text-amber-900">
-          <div className="max-w-7xl mx-auto flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 text-amber-700 shrink-0" />
-              <span>
-                <strong>Exploring in Guest Mode:</strong> Reference books, questions, and syllabus notes are fully functional. Sign in to synchronize additions permanently with Firestore.
-              </span>
-            </div>
-            <div className="flex items-center gap-3 shrink-0">
-              <button
-                type="button"
-                onClick={() => setIsAdminAuthModalOpen(true)}
-                className="font-semibold text-amber-900 underline hover:text-amber-950 flex items-center gap-1"
-              >
-                <KeyRound className="w-3.5 h-3.5" />
-                <span>{ADMIN_LOGIN_ID} Login</span>
-              </button>
-              <button
-                onClick={handlePromptLogin}
-                className="font-semibold text-amber-800 underline hover:text-amber-950 flex items-center gap-1"
-              >
-                <LogIn className="w-3.5 h-3.5" />
-                <span>Google Sign In</span>
-              </button>
-              <button
-                onClick={() => setShowGuestBanner(false)}
-                className="text-stone-400 hover:text-stone-600 ml-1"
-              >
-                ✕
               </button>
             </div>
           </div>

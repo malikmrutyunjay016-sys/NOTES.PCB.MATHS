@@ -87,13 +87,9 @@ function getReadableAuthError(err: any): { message: string; isProviderDisabled: 
     case 'auth/invalid-credential':
     case 'auth/wrong-password':
     case 'auth/user-not-found':
-      return {
-        message: `Invalid ${ADMIN_LOGIN_ID} credentials or password. If ${ADMIN_LOGIN_ID} has not been created yet, sign in with Google Mail ID first and create ${ADMIN_LOGIN_ID}.`,
-        isProviderDisabled: false,
-      };
     case 'auth/invalid-email':
       return {
-        message: `Enter Admin ID "${ADMIN_LOGIN_ID}" to sign in.`,
+        message: 'Incorrect ID or password',
         isProviderDisabled: false,
       };
     case 'auth/email-already-in-use':
@@ -116,11 +112,23 @@ function getReadableAuthError(err: any): { message: string; isProviderDisabled: 
         message: 'Too many attempts. Please wait a moment before trying again.',
         isProviderDisabled: false,
       };
-    default:
+    default: {
+      const rawMessage = String(err?.message || '');
+      if (
+        /invalid[-_ ]?(credential|login|email|password)|wrong[-_ ]?password|user[-_ ]?not[-_ ]?found/i.test(
+          `${code} ${rawMessage}`
+        )
+      ) {
+        return {
+          message: 'Incorrect ID or password',
+          isProviderDisabled: false,
+        };
+      }
       return {
-        message: err?.message || 'Authentication failed. Please try again.',
+        message: rawMessage || 'Authentication failed. Please try again.',
         isProviderDisabled: false,
       };
+    }
   }
 }
 
@@ -140,7 +148,7 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
   );
 
   const [mode, setMode] = useState<AuthMode>(currentUser && isVerifiedAdmin ? 'setup' : 'signin');
-  const [adminIdInput, setAdminIdInput] = useState<string>(ADMIN_LOGIN_ID);
+  const [adminIdInput, setAdminIdInput] = useState<string>('');
   const [password, setPassword] = useState<string>('');
   const [confirmPassword, setConfirmPassword] = useState<string>('');
   const [showPassword, setShowPassword] = useState<boolean>(false);
@@ -155,7 +163,7 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
   useEffect(() => {
     if (!isOpen) return;
     setMode(currentUser && isVerifiedAdmin ? 'setup' : 'signin');
-    setAdminIdInput(ADMIN_LOGIN_ID);
+    setAdminIdInput('');
     setPassword('');
     setConfirmPassword('');
     setCopiedPassword(false);
@@ -205,14 +213,15 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
     setIsProviderDisabled(false);
 
     if (!adminIdInput.trim() || !password) {
-      setErrorMsg(`Enter Admin ID "${ADMIN_LOGIN_ID}" and password.`);
+      setErrorMsg('Incorrect ID or password');
       return;
     }
 
-    if (resolvedAuthEmail.toLowerCase() === ADMIN_EMAIL.toLowerCase()) {
-      setErrorMsg(
-        `"${ADMIN_LOGIN_ID}" and your Mail ID (${ADMIN_EMAIL}) are two separate logins. Use "Continue with Google Sign-In" for ${ADMIN_EMAIL}, or enter "${ADMIN_LOGIN_ID}" here.`
-      );
+    if (
+      resolvedAuthEmail.toLowerCase() !== ADMIN_ID_EMAIL.toLowerCase() ||
+      resolvedAuthEmail.toLowerCase() === ADMIN_EMAIL.toLowerCase()
+    ) {
+      setErrorMsg('Incorrect ID or password');
       return;
     }
 
@@ -289,7 +298,7 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
       const result = await signInWithPopup(auth, googleProvider);
       if (result.user.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase()) {
         setMode('setup');
-        setAdminIdInput(ADMIN_LOGIN_ID);
+        setAdminIdInput('');
         setCheckingRegistry(true);
         getRegisteredAdmin123()
           .then((found) => setAdmin123Registered(Boolean(found)))
@@ -331,10 +340,12 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
             </div>
             <div>
               <h2 id="admin-auth-modal-title" className="font-serif font-bold text-lg text-stone-50">
-                {ADMIN_LOGIN_ID} Entity Login
+                {currentUser && isVerifiedAdmin ? `${ADMIN_LOGIN_ID} Entity Login` : 'Admin Login'}
               </h2>
               <p className="text-[11px] text-stone-400">
-                Separate from your Mail ID ({ADMIN_EMAIL}) login
+                {currentUser && isVerifiedAdmin
+                  ? `Separate from your Mail ID (${ADMIN_EMAIL}) login`
+                  : 'Enter your Admin ID and password'}
               </p>
             </div>
           </div>
@@ -367,7 +378,7 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
                     : 'text-stone-400 hover:text-stone-200'
                 }`}
               >
-                {ADMIN_LOGIN_ID} Sign In
+                Admin Sign In
               </button>
               <button
                 type="button"
@@ -429,14 +440,14 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
                     type="text"
                     value={adminIdInput}
                     onChange={(e) => setAdminIdInput(e.target.value)}
-                    placeholder={ADMIN_LOGIN_ID}
+                    placeholder="Enter Admin ID"
                     autoComplete="username"
                     className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-stone-950 border border-stone-800 focus:border-amber-500 focus:outline-none text-sm text-stone-100 placeholder:text-stone-600"
                     required
                   />
                 </div>
                 <p className="text-[11px] text-stone-400 mt-1">
-                  Independent Admin ID entity (separate from Google Mail login).
+                  Independent Admin ID login (separate from Google Mail login).
                 </p>
               </div>
 
@@ -450,7 +461,7 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
                     type={showPassword ? 'text' : 'password'}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder={`Enter ${ADMIN_LOGIN_ID} password`}
+                    placeholder="Enter password"
                     autoComplete="current-password"
                     className="w-full pl-9 pr-10 py-2.5 rounded-xl bg-stone-950 border border-stone-800 focus:border-amber-500 focus:outline-none text-sm text-stone-100 placeholder:text-stone-600"
                     required
@@ -476,7 +487,7 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
                 ) : (
                   <LogIn className="w-4 h-4" />
                 )}
-                <span>{loading ? 'Signing In...' : `Sign In as ${ADMIN_LOGIN_ID}`}</span>
+                <span>{loading ? 'Signing In...' : 'Sign In'}</span>
               </button>
             </form>
           ) : (
